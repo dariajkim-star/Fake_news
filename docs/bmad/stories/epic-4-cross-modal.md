@@ -9,7 +9,7 @@
 
 ### Status
 
-Draft
+Approved
 
 ### Story
 
@@ -20,21 +20,21 @@ Draft
 ### Acceptance Criteria
 
 1. `visual_entity` 모듈이 detection 출력(`region_id, class_name, bbox, conf, crop`)을 입력받아 ARCHITECTURE.md §2.1.2 출력 스키마(`region_id, entity_type, value, score, source, embedding, raw`)의 visual entity 리스트를 반환한다.
-2. PERSON crop: 얼굴 인식(face embedding 기반, 예: `facenet-pytorch`/InsightFace) + 사전 구축한 유명 인물 gallery와의 cosine similarity로 인물 이름을 예측한다 (`source: "face_recognition"`).
+2. PERSON crop: 얼굴 인식(InsightFace ArcFace embedding — architecture Tech Stack 확정 사항) + 사전 구축한 유명 인물 gallery와의 cosine similarity로 인물 이름을 예측한다 (`source: "face_recognition"`).
 3. LOGO crop: CLIP zero-shot 분류(후보 기업명 프롬프트 예: `"a logo of {ORG}"`)로 기업명을 예측하고, top-k candidates와 score를 `raw.candidates`에 기록한다 (`source: "clip_zero_shot"`).
-4. CHART/DOCUMENT/TEXT_REGION crop: OCR(EasyOCR 또는 PaddleOCR)로 텍스트를 추출하고, 정규식 기반 파서로 `MONEY`(₩/조/억/$/%), `DATE`, `ORG` 등 다중 entity를 파생한다 (`source: "ocr"`). 수치는 `normalized` 필드로 정규화한다.
+4. CHART/DOCUMENT/TEXT_REGION crop: OCR(PaddleOCR 우선, 대안 EasyOCR — architecture Tech Stack 준수)로 텍스트를 추출하고, 정규식 기반 파서로 `MONEY`(₩/조/억/$/%), `DATE`, `ORG` 등 다중 entity를 파생한다 (`source: "ocr"`). 수치는 `normalized` 필드로 정규화한다.
 5. 모든 인식 결과에 confidence score가 있고, config의 threshold(`score < τ_rec`) 미달 시 `value: null, source: "unrecognized"`로 출력하여 matching 단계의 UNKNOWN 후보가 된다 (FR12).
 6. 각 visual entity에 CLIP image embedding(`float32[512]`)이 포함되어 matching 단계에서 embedding 유사도 계산에 사용 가능하다.
-7. 모듈은 detection 없이도 단독 실행 가능한 CLI/함수 인터페이스(`recognize(detections, image) -> List[VisualEntity]`)를 제공하며, config(yaml)로 threshold·후보 리스트·모델 선택을 제어한다.
+7. 모듈은 detection 없이도 단독 실행 가능한 CLI/함수 인터페이스(`recognize(image, detections) -> List[VisualEntity]` — architecture Components §3 시그니처와 동일 인자 순서)를 제공하며, config(yaml)로 threshold·후보 리스트·모델 선택을 제어한다.
 
 ### Tasks / Subtasks
 
 - [ ] Task 1: 모듈 스캐폴딩 및 스키마 정의 (AC: 1, 7)
-  - [ ] `src/visual_entity/` 패키지 생성, `VisualEntity` dataclass/pydantic 스키마 정의 (ARCHITECTURE §2.1.2 준수)
+  - [ ] `src/vision/entity_recognizer.py` 생성 (architecture Source Tree 준수), `VisualEntity` dataclass/pydantic 스키마 정의 (ARCHITECTURE §2.1.2 준수)
   - [ ] `configs/visual_entity.yaml`에 threshold, 후보 ORG/PERSON 리스트 경로, OCR 엔진 선택 추가
   - [ ] `recognize(detections, image)` 진입점 함수 + class_name→recognizer 라우팅 구현
 - [ ] Task 2: PERSON 얼굴/인물 인식 (AC: 2, 5)
-  - [ ] 얼굴 detection+embedding 모델 통합 (facenet-pytorch MTCNN+InceptionResnetV1 또는 InsightFace)
+  - [ ] 얼굴 detection+embedding 모델 통합 (InsightFace ArcFace — architecture Tech Stack 확정, facenet-pytorch는 설치 이슈 시 fallback으로만)
   - [ ] 금융 도메인 유명 인물 gallery 구축 스크립트 (인물 리스트 + 대표 이미지 → embedding 저장, `assets/face_gallery.pkl`)
   - [ ] gallery cosine similarity 기반 top-1 예측 + threshold 미달 시 unrecognized 처리
 - [ ] Task 3: LOGO CLIP zero-shot 분류 (AC: 3, 5, 6)
@@ -42,7 +42,7 @@ Draft
   - [ ] 후보 기업명 리스트(금융/테크 주요 기업, `assets/org_candidates.txt`) + 프롬프트 템플릿으로 zero-shot 분류
   - [ ] top-k candidates/score 기록, threshold 처리, image embedding 반환
 - [ ] Task 4: OCR 기반 수치/날짜/텍스트 추출 (AC: 4, 5)
-  - [ ] EasyOCR(우선) 통합, CHART/DOCUMENT/TEXT_REGION crop에 적용
+  - [ ] PaddleOCR(우선, 대안 EasyOCR) 통합, CHART/DOCUMENT/TEXT_REGION crop에 적용
   - [ ] 정규식 파서: MONEY(₩, 조, 억, $, %, 쉼표 숫자), DATE(YYYY-MM-DD, N월 N일 등), ORG 키워드 → entity 파생 + `normalized` 값 산출
   - [ ] OCR confidence 전파 및 threshold 처리
 - [ ] Task 5: 단위 테스트 및 샘플 검증 (AC: 1~7)
@@ -54,7 +54,7 @@ Draft
 - **입출력 스키마**: ARCHITECTURE.md §2.1.2를 단일 소스로 삼을 것. `entity_type` 매핑: `PERSON→PERSON`, `LOGO→ORG`, `PRODUCT→PRODUCT`, `CHART/DOCUMENT/TEXT_REGION→OCR` 파생(MONEY/DATE/ORG 다중 가능). 하나의 region에서 여러 entity가 파생될 수 있으므로 반환 타입은 flat list.
 - **CLIP zero-shot**: `openai/clip-vit-base-patch32` (HuggingFace) 사용, 후보 리스트는 config로 교체 가능해야 Fakeddit 영어 도메인/한국어 금융 도메인 전환이 쉬움. 프롬프트 앙상블(`"a logo of {}"`, `"the {} company logo"`) 평균 허용.
 - **얼굴 인식**: gallery는 수십 명 규모로 시작(단일 GPU 제약, NFR1). gallery에 없는 인물은 당연히 unrecognized → UNKNOWN이며 이는 정상 동작.
-- **오류 전파 제한(FR12)**: threshold `τ_rec`는 유형별로 분리 config (face: 0.6, clip: 0.5, ocr: 0.4 초기값) — Story 4.2의 UNKNOWN 판정과 연동.
+- **오류 전파 제한(FR12)**: threshold `τ_rec`는 유형별로 분리 config (face: 0.5 — architecture Components §3의 "InsightFace 인물 DB 매칭 threshold 0.5" 준수, clip: 0.5, ocr: 0.4 초기값) — Story 4.2의 UNKNOWN 판정과 연동. 조정 시 architecture 문서 갱신 필요.
 - **성능**: 모든 모델 frozen(학습 없음). 배치 추론 지원하여 단일 샘플 수 초 이내(NFR2).
 - **Region Encoder(Epic 2 Story 2.3)와 CLIP 인스턴스 공유**하여 메모리 절약 — 동일 ViT-B/32 재사용.
 
@@ -70,7 +70,7 @@ Draft
 
 ### Status
 
-Draft
+Approved
 
 ### Story
 
@@ -128,7 +128,7 @@ Draft
 
 ### Status
 
-Draft
+Approved
 
 ### Story
 
@@ -186,7 +186,7 @@ Draft
 
 ### Status
 
-Draft
+Approved
 
 ### Story
 
@@ -200,14 +200,14 @@ Draft
 2. 출력이 ARCHITECTURE.md §3.2 최종 JSON 스키마를 준수한다: `fake_probability, label, threshold, evidence[](kind: entity_mismatch/entity_match/no_visual_evidence, visual/textual 상세, sim, verdict, weight), scores(global_clip_similarity, n_match, n_mismatch, n_unknown)`.
 3. evidence의 `weight`는 fusion cross-attention weight와 consistency feature 기여도 기반으로 산출되어 중요도 내림차순 정렬된다.
 4. 단일 샘플 end-to-end 추론이 GPU 기준 수 초 이내에 완료된다 (NFR2) — 모델은 초기화 시 1회 로드 후 재사용.
-5. `FinFactPipeline(config).predict(image, title, body) -> dict` 형태의 Python API와 `python -m src.pipeline.infer --image ... --text ...` CLI를 모두 제공한다.
+5. `FinFactPipeline(config).predict(image, title, body) -> dict` 형태의 Python API와 `python -m src.pipeline --image ... --text ...` CLI를 모두 제공한다 (architecture Source Tree의 `src/pipeline.py` 단일 모듈 준수).
 6. 개별 모듈 실패(detection 0건, OCR 실패, NER 무결과 등) 시에도 파이프라인이 예외 없이 degrade하여 결과를 반환한다 — detection 0건이면 global feature만으로 fusion, evidence는 UNKNOWN 중심.
 7. 대표 샘플 세트(진짜/가짜/MISMATCH 포함 5개 이상)에 대한 end-to-end 스모크 테스트가 통과한다.
 
 ### Tasks / Subtasks
 
 - [ ] Task 1: 파이프라인 클래스 (AC: 1, 4, 5)
-  - [ ] `src/pipeline/finfact_pipeline.py`: 모든 모듈(YOLO, VisualEntity, NER/RE, Matcher, Fusion) lazy 1회 로드 + `predict()` 구현
+  - [ ] `src/pipeline.py` (architecture Source Tree 준수): 모든 모듈(YOLO, VisualEntity, NER/RE, Matcher, Fusion) lazy 1회 로드 + `predict()` 구현
   - [ ] vision/text branch 실행 (동기 순차로 우선 구현, §3.1의 par는 최적화 옵션)
   - [ ] CLI entry point + config 경로 인자
 - [ ] Task 2: Evidence JSON 조립 (AC: 2, 3)
@@ -216,7 +216,7 @@ Draft
   - [ ] JSON schema 검증(pydantic) 및 정렬
 - [ ] Task 3: Graceful degradation (AC: 6)
   - [ ] 각 branch try/except + 빈 결과 기본값 정의(빈 detection → global token만, 빈 NER → UNKNOWN)
-  - [ ] degrade 발생 시 결과 JSON에 `warnings` 필드 기록
+  - [ ] degrade 발생 시 결과 JSON에 `warnings` 필드 기록 (§3.2 Prediction 스키마의 optional 확장 필드 — 스키마 필수 키는 항상 유지)
 - [ ] Task 4: 성능 및 스모크 테스트 (AC: 4, 7)
   - [ ] 대표 샘플 5+개 fixture 구성(진짜 2, 가짜 2, 인위적 MISMATCH 1)
   - [ ] end-to-end 스모크 테스트 + 추론 시간 측정 로그

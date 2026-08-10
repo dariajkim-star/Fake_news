@@ -9,7 +9,7 @@
 
 ### Status
 
-Draft
+Approved
 
 ### Story
 
@@ -19,7 +19,7 @@ Draft
 
 ### Acceptance Criteria
 
-1. 프로젝트 공통 클래스 정의 파일(`src/detection/classes.py` 또는 config)에 6개 클래스가 고정 index로 정의된다: `0: PERSON, 1: LOGO, 2: PRODUCT, 3: CHART, 4: DOCUMENT, 5: TEXT_REGION`.
+1. 프로젝트 공통 클래스 정의 파일(`src/vision/classes.py` 또는 config)에 6개 클래스가 고정 index로 정의된다: `0: PERSON, 1: LOGO, 2: PRODUCT, 3: CHART, 4: DOCUMENT, 5: TEXT_REGION`.
 2. 라벨 소스 전략이 문서화되고 스크립트로 구현된다:
    - PERSON: COCO pretrained YOLOv8의 `person` 클래스 → PERSON으로 매핑 (pseudo-label)
    - LOGO: 공개 로고 detection 데이터셋(예: LogoDet-3K/FlickrLogos 일부) 또는 CLIP zero-shot 후보 → 수작업 검수
@@ -33,7 +33,7 @@ Draft
 ### Tasks / Subtasks
 
 - [ ] 클래스 정의 및 config 작성 (AC: 1)
-  - [ ] `src/detection/classes.py`에 6-class enum/dict 정의, `configs/detection.yaml`에 반영
+  - [ ] `src/vision/classes.py`에 6-class enum/dict 정의, `configs/detector.yaml`에 반영
 - [ ] pretrained 클래스 매핑 pseudo-labeling 스크립트 작성 (AC: 2)
   - [ ] `scripts/detection/pseudo_label_coco.py`: COCO pretrained YOLOv8x로 Fakeddit 금융 subset 이미지 추론 → person/사물 클래스를 PERSON/PRODUCT로 매핑, confidence ≥ 0.5만 채택
   - [ ] 외부 공개 데이터셋(LOGO, CHART/DOCUMENT/TEXT_REGION) 다운로드·클래스 매핑 변환 스크립트 작성
@@ -49,7 +49,7 @@ Draft
 
 ### Dev Notes
 
-- **저장 위치**: 데이터는 `data/detection/` 하위, 코드는 `src/detection/`, 스크립트는 `scripts/detection/` (Epic 1 스캐폴딩의 monorepo 구조 준수, NFR6 모듈화).
+- **저장 위치**: 데이터는 `data/annotations/` 하위(architecture Source Tree 준수), 코드는 `src/vision/`, 스크립트는 `scripts/detection/`(architecture의 `scripts/` 하위 세분화) — Epic 1 스캐폴딩의 monorepo 구조 준수, NFR6 모듈화.
 - **pseudo-label 품질**: COCO pretrained 매핑은 recall 확보용이며 precision은 수작업 검수로 보완. confidence threshold는 config로 노출.
 - **클래스 판정 기준(라벨링 가이드 핵심)**: CHART는 축/데이터 시각화가 있는 영역, DOCUMENT는 계약서/공시 등 문서 전체 페이지 형태, TEXT_REGION은 이미지 내 임의의 텍스트 블록(자막, 워터마크, 스크린샷 텍스트). DOCUMENT 내부의 텍스트는 별도 TEXT_REGION으로 중복 라벨링하지 않는다.
 - **재현성**: 샘플링/분할 seed는 전역 config의 seed 사용 (NFR3).
@@ -66,7 +66,7 @@ Draft
 
 ### Status
 
-Draft
+Approved
 
 ### Story
 
@@ -80,20 +80,20 @@ Draft
 2. COCO pretrained weight에서 시작하는 fine-tuning이 단일 GPU에서 완료된다 (기본: `yolov8s.pt`, imgsz=640, 약 50 epochs — GPU 메모리에 맞게 batch 조정).
 3. held-out test split에서 mAP@50, mAP@50-95, 클래스별 Precision/Recall이 산출되어 `results/detection/` 하위에 저장된다 (NFR4).
 4. fine-tuned 모델과 pretrained-only(COCO 매핑) baseline의 mAP@50 비교표가 기록된다.
-5. 추론 wrapper 모듈 `src/detection/detector.py`가 구현된다: 이미지 경로/PIL 입력 → `[{class_name, class_id, bbox_xyxy, confidence}]` 리스트 반환, confidence threshold와 max detections는 config로 제어.
+5. 추론 wrapper 모듈 `src/vision/detector.py`가 구현된다: 이미지 경로/PIL 입력 → architecture의 Detection 스키마(`region_id, class_id, class_name, bbox [x1,y1,x2,y2], conf`) 리스트 반환. confidence threshold(기본 0.4)와 max detections(기본 R=16), NMS IoU(기본 0.5)는 config로 제어 (architecture Detector 컴포넌트 스펙 준수).
 6. Fakeddit 금융 subset 전체 이미지에 대한 배치 추론 스크립트가 detection 결과를 JSON(이미지 id → detections)으로 캐싱한다 — 이후 Story 2.3/Epic 4의 입력.
 7. 대표 이미지 20장에 대한 bbox 시각화 샘플이 저장되어 정성 확인이 가능하다.
 
 ### Tasks / Subtasks
 
 - [ ] 학습 config 및 스크립트 작성 (AC: 1, 2)
-  - [ ] `configs/detection.yaml`: model/epochs/batch/imgsz/seed/augmentation 설정
+  - [ ] `configs/detector.yaml`: model/epochs/batch/imgsz/seed/augmentation 설정
   - [ ] `scripts/detection/train_yolo.py`: Ultralytics API(`YOLO.train`)로 fine-tuning, best.pt를 `models/detection/`에 저장
 - [ ] 평가 수행 (AC: 3, 4)
   - [ ] `scripts/detection/eval_yolo.py`: `YOLO.val`로 test split 평가, 클래스별 metric CSV 저장
   - [ ] pretrained-only baseline 평가 후 비교표(`results/detection/comparison.md`) 작성
 - [ ] 추론 wrapper 구현 (AC: 5)
-  - [ ] `src/detection/detector.py`: `Detector` 클래스 (load, predict, predict_batch), 출력 dataclass 정의
+  - [ ] `src/vision/detector.py`: `Detector` 클래스 (load, predict, predict_batch), architecture Detection 스키마 준수 출력 dataclass 정의
 - [ ] 배치 추론 캐싱 (AC: 6)
   - [ ] `scripts/detection/run_inference.py`: 금융 subset 전체 → `data/detection/cache/detections.json`
 - [ ] 시각화 (AC: 7)
@@ -120,7 +120,7 @@ Draft
 
 ### Status
 
-Draft
+Approved
 
 ### Story
 
@@ -130,36 +130,37 @@ Draft
 
 ### Acceptance Criteria
 
-1. `src/detection/region_encoder.py`에 `RegionEncoder` 모듈이 구현된다: 입력(원본 이미지 + detections 리스트) → 출력 `region_features [N, D]`, `region_mask [N]`, `region_meta`(class_id, bbox, confidence).
+1. `src/vision/region_encoder.py`에 `RegionEncoder` 모듈이 구현된다: 입력(원본 이미지 + detections 리스트) → 출력 `region_features [(R+1), 768]`(region crop feature + global image feature 1개, Linear projection으로 768-dim 통일 — architecture의 `V' ∈ R^{(R+1)×768}` 스펙), `region_mask [(R+1)]`, `region_meta`(class_id, bbox, confidence).
 2. bbox crop 로직이 구현된다: xyxy 좌표 clamp(이미지 경계), 최소 크기 필터(예: 짧은 변 16px 미만 제외), 선택적 context padding(bbox 확장 비율 config, 기본 10%).
-3. backbone은 config로 선택 가능하다: `clip` (CLIP ViT-B/32 image encoder, D=512, 기본값) 또는 `resnet` (ResNet-50 penultimate, D=2048). backbone은 frozen이 기본이다.
-4. region 수는 confidence 상위 K개(기본 K=10)로 truncate하고, K 미만이면 zero-padding + mask 처리한다. 검출 0건 이미지는 전체 이미지 1개 region으로 fallback한다.
+3. backbone은 config로 선택 가능하다: `clip` (CLIP ViT-B/32 image encoder, raw D=512, 기본값) 또는 `resnet` (ResNet-50 penultimate, raw D=2048). 어느 쪽이든 학습 가능한 Linear projection으로 공통 768-dim에 매핑한다. backbone은 frozen이 기본이다.
+4. region 수는 confidence 상위 R개(기본 R=16, architecture의 이미지당 최대 16 regions 준수)로 truncate하고, R 미만이면 zero-padding + mask 처리한다. global image feature가 항상 시퀀스에 포함되므로 검출 0건 이미지도 최소 1개(global) region으로 동작한다.
 5. region feature에 class embedding(6-class learnable embedding)과 bbox 위치 encoding(normalized [x1,y1,x2,y2,w,h] projection)을 더하는 옵션이 config로 제어된다 (기본 on).
 6. 금융 subset 전체에 대해 region feature를 사전 추출·캐싱하는 스크립트가 있으며(`.npz` 또는 `.pt` per split), Story 2.4 학습 시 디스크 캐시에서 로드된다.
-7. 처리 통계(이미지당 평균 region 수, 필터링된 bbox 수, fallback 비율)가 리포트된다.
+7. 처리 통계(이미지당 평균 region 수, 필터링된 bbox 수, global-only 비율)가 리포트된다.
 
 ### Tasks / Subtasks
 
 - [ ] crop 유틸 구현 (AC: 2)
-  - [ ] `src/detection/crop.py`: clamp, 최소 크기 필터, context padding, 배치 crop
+  - [ ] `src/vision/crop.py`: clamp, 최소 크기 필터, context padding, 배치 crop
 - [ ] RegionEncoder 모듈 구현 (AC: 1, 3, 4, 5)
-  - [ ] CLIP/ResNet backbone 로더 (HuggingFace/torchvision, frozen 옵션)
+  - [ ] CLIP/ResNet backbone 로더 (HuggingFace/torchvision, frozen 옵션) + 768-dim Linear projection
   - [ ] class embedding + bbox positional encoding projection layer
-  - [ ] top-K truncation, padding/mask, 검출 0건 fallback
+  - [ ] global image feature 결합((R+1) 시퀀스), top-R truncation, padding/mask, 검출 0건 처리
 - [ ] feature 캐싱 파이프라인 (AC: 6)
   - [ ] `scripts/detection/extract_regions.py`: detections.json + 이미지 → split별 feature 캐시 파일
   - [ ] 캐시 로더 `RegionFeatureDataset` (Story 2.4에서 사용)
 - [ ] 통계 리포트 (AC: 7)
   - [ ] 추출 스크립트 실행 시 통계 JSON/CSV 출력
 - [ ] Testing (AC: 1, 2, 4)
-  - [ ] unit test: crop 경계 케이스(이미지 밖 bbox, 극소 bbox), padding/mask shape, fallback 동작, 출력 dtype/shape
+  - [ ] unit test: crop 경계 케이스(이미지 밖 bbox, 극소 bbox), padding/mask shape, 검출 0건(global-only) 동작, 출력 dtype/shape
 
 ### Dev Notes
 
 - **CLIP 우선 이유**: CLIP image embedding은 Epic 4의 visual entity recognition(로고 CLIP 분류)과 backbone을 공유할 수 있어 메모리·일관성 이점 (PRD Technical Assumptions). `openai/clip-vit-base-patch32` 사용.
 - **frozen backbone**: 단일 GPU 제약(NFR1) 하에서 backbone은 freeze하고 projection/embedding layer만 fusion 단계에서 학습. 캐싱이 가능해지는 전제이기도 하다 — class/bbox embedding은 학습 대상이므로 캐시에는 raw backbone feature + meta만 저장하고, embedding 결합은 학습 시 on-the-fly로 수행한다.
 - **interface 계약**: Story 2.4의 fusion 모델은 `(region_features, region_mask, region_meta)`만 소비한다 — detector/encoder 교체가 가능해야 ablation이 성립 (NFR6).
-- **K=10 근거**: Fakeddit 이미지의 객체 수 분포를 Story 2.2 캐시로 확인 후 필요 시 조정, config 노출.
+- **R=16 근거**: architecture Detection 스키마의 "이미지당 최대 R=16" 상한 준수. Fakeddit 이미지의 객체 수 분포를 Story 2.2 캐시로 확인 후 필요 시 하향 조정 가능, config 노출.
+- **차원 계약**: 캐시에는 raw backbone feature(512/2048) + meta만 저장하고, 768-dim projection·class/bbox embedding은 학습 대상이므로 학습 시 on-the-fly로 적용 — fusion(Story 2.4)이 소비하는 최종 시퀀스는 `V' [(R+1), 768]`.
 
 ### Testing
 
@@ -172,7 +173,7 @@ Draft
 
 ### Status
 
-Draft
+Approved
 
 ### Story
 
@@ -183,9 +184,9 @@ Draft
 ### Acceptance Criteria
 
 1. `src/fusion/cross_modal_attention.py`에 fusion 모델이 구현된다:
-   - Text encoder: Epic 1의 BERT 계열(DeBERTa) token-level hidden states `[T, D_t]`
-   - Region 입력: Story 2.3의 `region_features [K, D_r]` + mask
-   - 양측을 공통 차원 `d_model`(기본 256)로 projection 후 multi-head cross-attention (text→region 및 region→text 양방향, 기본 4 heads, 1~2 layers)
+   - Text encoder: Epic 1에서 확정한 BERT 계열 backbone의 token-level hidden states `T [256, 768]` (architecture Token Encoder 스펙)
+   - Region 입력: Story 2.3의 `region_features V' [(R+1), 768]` + mask
+   - 양측 공통 차원 `d_model=768`에서 2-stream multi-head cross-attention (text→region 및 region→text 양방향, 기본 8 heads, 2 layers — architecture Fusion Classifier 스펙)
    - attended feature pooling(masked mean 또는 [CLS]) → concat → MLP classifier → fake probability
 2. padding region/token은 attention mask로 정확히 제외된다.
 3. 학습 스크립트가 config 기반으로 동작한다: lr, epochs, batch size, d_model, heads, layers, seed. text encoder freeze/unfreeze가 config로 제어된다(기본: freeze 후 상위 2개 layer만 unfreeze).
@@ -207,11 +208,12 @@ Draft
   - [ ] Epic 1 공통 평가 루프 재사용, test metric 산출
   - [ ] ablation 결과표에 "+Object Detection" row 추가, 비교 코멘트 작성
 - [ ] Testing (AC: 1, 2, 6)
-  - [ ] unit test: forward pass shape, mask 적용(padding 위치 attention weight ≈ 0), attention map shape, 검출 0건(fallback region 1개) 샘플 처리
+  - [ ] unit test: forward pass shape, mask 적용(padding 위치 attention weight ≈ 0), attention map shape, 검출 0건(global region 1개만 존재) 샘플 처리
 
 ### Dev Notes
 
-- **아키텍처 근거**: word-region pair 수준 cross-modal matching(PRD 핵심 목표)의 기반 구조. EM-FEND/CFFN 계열의 region-token co-attention 설계를 단순화한 형태 — 1~2 layer로 시작해 과적합/GPU 제약 관리 (NFR1).
+- **아키텍처 근거**: word-region pair 수준 cross-modal matching(PRD 핵심 목표)의 기반 구조. architecture Fusion Classifier(2-stream cross-attention, 2 layers, 8 heads, d=768)와 동일 골격이며, 본 스토리는 consistency vector 없이 cross-attention 경로만 학습("+Object Detection" 구성) — Epic 4(Story 4.3)에서 consistency feature가 이 모델에 concat 결합된다. GPU 제약 시 layer/head 축소는 config로 허용하되 최종 결과는 architecture 기본값 기준으로 보고 (NFR1).
+- **Text backbone**: architecture는 KLUE-BERT(한국어 셋 기준)를 명시하나 PRD Technical Assumptions에 따라 Fakeddit(영어) 학습 시 Epic 1에서 확정한 DeBERTa 계열을 사용한다. hidden dim 768은 양쪽 모두 동일하므로 인터페이스(`T [256, 768]`)는 불변 — backbone 선택은 config로 제어.
 - **학습 전략**: region backbone frozen + 캐시 feature 사용으로 fusion 모델만 학습 → 단일 GPU에서 1 epoch가 빠르게 돌도록 설계. text encoder full fine-tuning은 메모리 초과 시 즉시 freeze로 전환.
 - **공정 비교**: ablation 유효성을 위해 Story 1.4와 동일한 train/val/test split, 동일 seed 목록(최소 1개, 가능하면 3 seeds 평균), 동일 평가 스크립트를 사용해야 한다 (FR10, NFR3).
 - **성능 기대치**: late fusion 대비 F1 개선이 없더라도 이 스토리는 실패가 아니다 — 결과를 그대로 기록하고 원인 가설(detection 품질, region 수, attention 용량)을 남겨 Epic 5 error analysis의 입력으로 한다.

@@ -8,7 +8,7 @@
 ## Story 5.1: Ablation 실험 매트릭스 실행 및 결과 리포트
 
 ### Status
-Draft
+Approved
 
 ### Story
 **As a** 연구자(과제 수행자),
@@ -32,6 +32,7 @@ Draft
   - [ ] 실험별 output 디렉토리 생성, config 사본·git hash·실행 시각 저장
   - [ ] Epic 1~4에서 구축한 공통 train/eval 루프 재사용 (모델 factory가 config flag로 구성 분기)
   - [ ] 각 실행 종료 시 `metrics.json` 저장 (sklearn 기반 Accuracy/P/R/F1/AUROC)
+  - [ ] wandb run 로깅 연동 (run name = `{config_name}-s{seed}`, config·지표 기록; 오프라인 환경 대비 `--no-wandb` flag 시 CSV fallback — architecture "Experiment Tracking" 준수)
 - [ ] Task 3: 두 평가 셋 평가 지원 (AC: 6)
   - [ ] `--eval-sets fakeddit_fin,custom_fin` 옵션으로 test 셋별 metrics 분리 저장 (`metrics_fakeddit_fin.json`, `metrics_custom_fin.json`)
 - [ ] Task 4: `scripts/report_ablation.py` 구현 (AC: 4, 5)
@@ -48,6 +49,8 @@ Draft
 - **재현성(NFR3)**: `torch.manual_seed`, `numpy`, `random`, `cudnn.deterministic=True` 일괄 설정 유틸 재사용. split은 Epic 1의 고정 split 파일(예: `data/splits/*.json`)을 참조하고 재생성 금지.
 - **AUROC**: `sklearn.metrics.roc_auc_score`에 fake class probability(softmax/sigmoid 출력) 사용. threshold 기반 지표(P/R/F1)는 0.5 고정, val 셋 기반 threshold 튜닝은 하지 않는다(구성 간 공정 비교).
 - **컴퓨팅 제약(NFR1)**: A4~A6는 detector/NER 출력을 사전 계산 캐시(예: `data/cache/regions/`, `data/cache/entities/`)에서 로드 — ablation 재실행 시 upstream 모듈 재추론 방지.
+- **실험 추적(architecture)**: wandb를 1차 로깅 채널로 사용(run별 config/metric, ablation 비교 표). `metrics.json`은 wandb와 무관하게 항상 로컬 저장(재현 검증·report 스크립트 입력의 단일 source of truth). 오프라인 대안은 CSV logging.
+- **출력 경로**: architecture Source Tree의 `experiments/`가 실험 결과 루트다 — 본 스토리의 `outputs/ablation/`은 `experiments/ablation/`으로 매핑해 구현해도 무방하며, 최종 표는 어느 쪽이든 `docs/results/`로 복사한다(report 스크립트의 스캔 루트를 config로 주입).
 - **성공 기준(DEV_PLAN Phase 4)**: A6가 A5 대비 F1/AUROC +1%p 이상이면 가설 입증. 미달 시에도 결과를 그대로 기록하고 Story 5.2 error analysis를 대안 기여로 전환(PRD 리스크 3).
 
 ### Testing
@@ -61,7 +64,7 @@ Draft
 ## Story 5.2: Error Analysis — MISMATCH 오탐/미탐 및 오류 전파 분석
 
 ### Status
-Draft
+Approved
 
 ### Story
 **As a** 연구자,
@@ -106,7 +109,7 @@ Draft
 ## Story 5.3: Gradio 데모 앱 — Fake Score + Mismatch Evidence 시각화
 
 ### Status
-Draft
+Approved
 
 ### Story
 **As a** 발표 청중/과제 평가자,
@@ -157,7 +160,7 @@ Draft
 ## Story 5.4: 발표 자료 및 재현 문서
 
 ### Status
-Draft
+Approved
 
 ### Story
 **As a** 과제 수행자,
