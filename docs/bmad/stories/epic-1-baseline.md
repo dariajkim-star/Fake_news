@@ -9,7 +9,7 @@
 
 ### Status
 
-Approved
+Ready for Review
 
 ### Story
 
@@ -29,26 +29,26 @@ so that **이후 모든 모델(baseline~최종 fusion 모델)을 동일한 실�
 
 ### Tasks / Subtasks
 
-- [ ] repo 디렉토리 구조 및 패키지 초기화 (AC: 1)
-  - [ ] `src/` 패키지 생성 (architecture Source Tree 기준), 하위 모듈 `data/`, `fusion/`, `utils/` + 공통 학습/평가 모듈 및 `__init__.py`
-  - [ ] `configs/`, `scripts/`, `tests/`, `outputs/`(.gitignore 처리) 생성
-- [ ] config 시스템 구현 (AC: 2)
-  - [ ] yaml 로더 + dataclass/dict 기반 config 객체 (`src/utils/config.py`)
-  - [ ] `scripts/train.py`, `scripts/evaluate.py` 엔트리포인트에 `--config` 인자 연결
-  - [ ] 예시 config `configs/base.yaml` 작성 (exp_name, seed, device, logging 옵션 포함)
-- [ ] 재현성 유틸 구현 (AC: 3)
-  - [ ] `set_seed()` — random/numpy/torch/cuda seed, `torch.backends.cudnn.deterministic=True`
-  - [ ] DataLoader `worker_init_fn` 및 `generator` seed 처리
-- [ ] 공통 Trainer 구현 (AC: 4)
-  - [ ] train/val epoch loop, loss/metric 집계, best checkpoint 저장
-  - [ ] CSV 로거 및 TensorBoard 로거 (config로 선택)
-- [ ] 평가 모듈 구현 (AC: 5)
-  - [ ] `compute_metrics(y_true, y_prob)` — Accuracy/P/R/F1/AUROC (scikit-learn)
-  - [ ] `metrics.json` 저장 유틸
-- [ ] 의존성 및 문서 (AC: 6)
-  - [ ] `requirements.txt` 작성, README에 설치/실행 가이드
-- [ ] Unit test 작성 (AC: 7)
-  - [ ] `tests/test_config.py`, `tests/test_seed.py`, `tests/test_metrics.py`
+- [x] repo 디렉토리 구조 및 패키지 초기화 (AC: 1)
+  - [x] `src/` 패키지 생성 (architecture Source Tree 기준), 하위 모듈 `data/`, `fusion/`, `utils/` + 공통 학습/평가 모듈 및 `__init__.py`
+  - [x] `configs/`, `scripts/`, `tests/`, `outputs/`(.gitignore 처리) 생성
+- [x] config 시스템 구현 (AC: 2)
+  - [x] yaml 로더 + dataclass/dict 기반 config 객체 (`src/utils/config.py`)
+  - [x] `scripts/train.py`, `scripts/evaluate.py` 엔트리포인트에 `--config` 인자 연결
+  - [x] 예시 config `configs/base.yaml` 작성 (exp_name, seed, device, logging 옵션 포함)
+- [x] 재현성 유틸 구현 (AC: 3)
+  - [x] `set_seed()` — random/numpy/torch/cuda seed, `torch.backends.cudnn.deterministic=True`
+  - [x] DataLoader `worker_init_fn` 및 `generator` seed 처리
+- [x] 공통 Trainer 구현 (AC: 4)
+  - [x] train/val epoch loop, loss/metric 집계, best checkpoint 저장
+  - [x] CSV 로거 및 TensorBoard 로거 (config로 선택)
+- [x] 평가 모듈 구현 (AC: 5)
+  - [x] `compute_metrics(y_true, y_prob)` — Accuracy/P/R/F1/AUROC (scikit-learn)
+  - [x] `metrics.json` 저장 유틸
+- [x] 의존성 및 문서 (AC: 6)
+  - [x] `requirements.txt` 작성, README에 설치/실행 가이드
+- [x] Unit test 작성 (AC: 7)
+  - [x] `tests/test_config.py`, `tests/test_seed.py`, `tests/test_metrics.py`
 
 ### Dev Notes
 
@@ -62,6 +62,23 @@ so that **이후 모든 모델(baseline~최종 fusion 모델)을 동일한 실�
 
 - `tests/` 하위 pytest 기반 unit test: config 로딩(누락 키 에러 포함), seed 고정 후 동일 난수 재현, metric 계산 결과가 scikit-learn 기대값과 일치.
 - 수동 검증: 더미 데이터로 `train.py` 1 epoch smoke run이 에러 없이 checkpoint/metrics.json을 생성.
+
+### Dev Agent Record
+
+구현 완료 (2026-08-10). 검증 결과:
+
+- **pytest 24개 전부 통과** — `tests/test_config.py`(8), `test_seed.py`(5), `test_metrics.py`(8), `test_trainer_smoke.py`(3).
+- **AC3 재현성 실측**: 동일 config 2회 실행(`repro_a`/`repro_b`) → `metrics.json` 완전 일치.
+- **AC4 학습 동작 실측**: 더미 데이터에서 val_f1 0.0 → 1.0 수렴 확인 (학습 루프가 실제로 학습함).
+- **AC2/AC5 실측**: `outputs/<exp_name>/`에 `config.yaml`·`best.pt`·`history.csv`·`metrics.json` 생성 확인.
+
+구현 시 결정 사항:
+
+- 공통 학습/평가 코드는 Dev Notes가 허용한 두 위치 중 `src/training/`·`src/evaluation/`을 선택 (역할이 드러나 Epic 2~5에서 찾기 쉬움). architecture Source Tree의 `src/data`·`src/fusion`·`src/utils`는 그대로 유지.
+- **모듈 교체 계약**(NFR6 ablation 전제): 모든 모델은 `forward(batch: dict) -> logits [B,2]`, 라벨은 batch의 `label` 키. 이 계약만 지키면 Trainer 수정 없이 Phase 1~4 모델을 갈아끼울 수 있다. 데이터셋/모델은 각각 `src/data/registry.py`·`src/fusion/registry.py`의 레지스트리에 등록해 config `data.name`/`model.name`으로 선택한다.
+- config는 `_base_` 상속과 `--set key=value` 오버라이드를 지원 (ablation config를 base 상속으로 최소 diff 작성 가능).
+- 스캐폴딩만으로 end-to-end 실행을 검증할 수 있도록 `dummy` 데이터셋/모델을 등록해 두었다. Story 1.2에서 `fakeddit`, 1.3~1.4에서 실제 모델이 추가된다.
+- README의 프로젝트 구조·실행 절을 실제 구현 인터페이스에 맞게 갱신.
 
 ---
 

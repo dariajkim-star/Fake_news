@@ -104,54 +104,75 @@ FinFact는:
 
 ## 6. 프로젝트 구조 (예상)
 
+`✅` = Story 1.1에서 구현 완료, 나머지는 해당 Epic에서 추가된다.
+
 ```
 Fake_news/
 ├── README.md
-├── requirements.txt
-├── configs/                  # 학습/모델 설정 (yaml)
-├── data/
-│   ├── raw/                  # Fakeddit 원본
-│   └── processed/            # 전처리 결과
+├── requirements.txt          ✅
+├── configs/                  ✅ 실험 설정 (yaml) — base.yaml 상속 구조
+├── data/                     Fakeddit 원본/전처리 (git 제외)
 ├── src/
-│   ├── detection/            # YOLOv8/DETR object detection
-│   ├── visual_entity/        # CLIP/얼굴/로고 인식, OCR
-│   ├── nlp/                  # NER, Event Extraction (BERT 계열)
-│   ├── matching/             # Cross-modal entity matching
-│   ├── fusion/               # Cross-modal attention + classifier
-│   ├── train.py
-│   └── infer.py
-├── notebooks/                # 실험/EDA
-├── experiments/              # ablation 결과, checkpoint
-└── demo/                     # Streamlit/Gradio 데모
+│   ├── data/                 ✅ Dataset 레지스트리 (Story 1.2에서 fakeddit 추가)
+│   ├── vision/               YOLOv8 detection + visual entity recognition (Epic 2·4)
+│   ├── text/                 NER / event extraction (Epic 3)
+│   ├── matching/             Cross-modal entity matching (Epic 4)
+│   ├── fusion/               ✅ 모델 레지스트리 — baseline·cross-attention classifier
+│   ├── training/             ✅ 공통 Trainer (모든 Phase 공유)
+│   ├── evaluation/           ✅ 공통 지표 (Accuracy/P/R/F1/AUROC)
+│   └── utils/                ✅ config, seed, 로깅
+├── scripts/                  ✅ train.py, evaluate.py (+ 데이터 준비 스크립트)
+├── tests/                    ✅ pytest
+├── outputs/                  실험별 결과 (config 사본·checkpoint·metrics.json)
+└── demo/                     Gradio 데모 (Epic 5)
 ```
 
 ---
 
-## 7. 설치 및 실행 (계획된 인터페이스)
+## 7. 설치 및 실행
 
-> 아직 코드 구현 전이며, 아래는 계획된 CLI 인터페이스입니다.
+### 설치 (Python 3.10+)
 
 ```bash
-# 환경 (Python 3.10+)
 python -m venv .venv
-.venv\Scripts\activate        # Windows
-pip install -r requirements.txt   # torch, transformers, ultralytics, timm, easyocr 등
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-# 데이터 준비
-python src/data/prepare_fakeddit.py --root data/raw --out data/processed
+Phase 1 스캐폴딩 실행에는 `torch`, `scikit-learn`, `PyYAML`, `pytest`만 있으면 충분하다.
+`ultralytics` / `paddleocr` / `insightface` 등은 Epic 2 이후에 필요하다.
 
-# 학습 (Phase별)
-python src/train.py --config configs/phase1_baseline.yaml   # ResNet + BERT late fusion
-python src/train.py --config configs/phase2_regions.yaml    # + YOLO regions + Cross Attention
-python src/train.py --config configs/phase4_full.yaml       # + Entity consistency (최종)
+### 학습 · 평가
 
-# 추론
-python src/infer.py --image sample.jpg --text "삼성전자, NVIDIA와 20조 계약..." \
-    --checkpoint experiments/phase4/best.pt
+실험 하나는 config 파일 하나로 정의된다. `--set`으로 임시 오버라이드할 수 있고,
+실행 결과는 `outputs/<exp_name>/`에 **config 사본 + checkpoint + metrics.json + history.csv**로 남는다.
+
+```bash
+# 스캐폴딩 smoke run (더미 데이터, CPU)
+python scripts/train.py --config configs/base.yaml --set exp_name=smoke train.epochs=2 device=cpu
+
+# 저장된 checkpoint로 test split 평가
+python scripts/evaluate.py --config outputs/smoke/config.yaml --split test
+
+# 테스트
+python -m pytest tests -q
+```
+
+`configs/base.yaml`을 `_base_`로 상속해 Phase별 config를 만든다 (모델·데이터만 교체 → ablation 성립).
+
+```yaml
+_base_: base.yaml
+exp_name: phase1_late_fusion
+model: { name: late_fusion }
+data:  { name: fakeddit }
+```
+
+### 추론 (Epic 4 완료 후)
+
+```bash
+python scripts/infer.py --image sample.jpg --text "삼성전자, NVIDIA와 20조 계약..." \
+    --checkpoint outputs/phase4/best.pt
 # 출력: fake_prob=0.93, mismatches=[("Jensen Huang","Lisa Su"), ("NVIDIA","AMD")]
-
-# 데모
-streamlit run demo/app.py
 ```
 
 ### 단계별 개발 로드맵

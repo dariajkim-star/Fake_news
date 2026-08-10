@@ -1,0 +1,32 @@
+# FinFact 기본 실험 config
+# 다른 config는 `_base_: base.yaml`로 이 파일을 상속한 뒤 필요한 값만 덮어쓴다.
+
+exp_name: base            # outputs/<exp_name>/ 아래에 결과 저장
+seed: 42                  # 모든 난수원에 적용 (NFR3)
+deterministic: true       # cudnn deterministic — 재현성 우선
+device: auto              # auto | cuda | cpu
+output_dir: outputs
+
+data:
+  name: dummy             # Story 1.2에서 fakeddit 추가
+  batch_size: 16
+  num_workers: 0          # Windows에서는 0 권장 (spawn 오버헤드)
+  subsample: null         # 단일 GPU 제약 시 학습 샘플 수 제한 (NFR1)
+
+model:
+  name: dummy             # Story 1.3~1.4에서 text_only / image_only / late_fusion 추가
+  hidden_dim: 32
+
+train:
+  epochs: 3
+  lr: 0.001
+  weight_decay: 0.01
+  grad_clip: 1.0
+  amp: false              # 단일 GPU 메모리 부족 시 true
+  monitor: f1             # best checkpoint 기준 (val_f1)
+  monitor_mode: max
+  early_stopping_patience: null
+  log_every: 50
+
+logging:
+  backend: csv            # csv | tensorboard

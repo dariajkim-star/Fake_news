@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Data / checkpoints / experiment outputs (large artifacts stay local)
+data/
+checkpoints/
+outputs/
+!outputs/.gitkeep
+wandb/
+runs/
+*.ckpt
+*.pt
+*.pth
+
+# Tools / OS
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
