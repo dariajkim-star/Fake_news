@@ -1,256 +1,604 @@
-# FinFact
+# FinDeepfake-48h
 
-**Object-Level Multimodal Financial Misinformation Detection**
-— 뉴스 이미지 속 시각적 증거와 기사 텍스트의 주장을 entity 단위로 대조하여 금융 가짜뉴스를 탐지하는 딥러닝 프로젝트.
+**Face-Level Object Detection + Financial Claim NLP for Deepfake-Enabled Financial Disinformation**
+
+48시간 안에 완주하는 것을 설계 제약으로 삼은 멀티모달 딥러닝 프로젝트다.
+영상이 **AI로 조작되었는지**와, 영상 속 **금융 주장이 신뢰할 만한지**를 각각 판정한다.
 
 ---
 
 ## 1. 문제 정의
 
-### 왜 금융 가짜뉴스인가?
-- M&A 루머, 실적 조작, CEO 관련 허위 보도, 주가조작성 SNS 게시물 등 금융 가짜뉴스는 **실제 금전적 피해(주가 급등락, 개인 투자자 손실)** 로 직결된다.
-- 금융 뉴스는 기업명, 인물, 금액, 날짜 같은 **entity 중심의 사실 주장**으로 구성되어 있어, entity 단위 검증이 특히 효과적인 도메인이다.
+### 1.1 우리가 잡으려는 것
 
-### 왜 object-level 접근인가?
-기존 multimodal 탐지 모델은 이미지 전체와 문장 전체를 CLIP similarity 등으로 **한 번에** 비교한다. 그러나 가짜뉴스의 조작은 대개 국소적이다 — 예: "NVIDIA 계약 체결" 기사에 AMD 행사 사진을 붙이는 식.
+용어를 먼저 정확히 못 박는다. 이 구분이 프로젝트 범위 전체를 결정한다.
 
-FinFact는:
-- **Object Detection**으로 이미지 속 증거를 객체 단위(PERSON, LOGO, CHART, ...)로 쪼개고,
-- **NER / Event Extraction**으로 텍스트 속 주장을 entity 단위로 뽑아,
-- 이를 **하나씩(word-region pair) 대조**하여 어떤 entity가 불일치(MISMATCH)인지 근거까지 제시한다.
+| 개념 | 의미 | AI 조작 필수 |
+|---|---|:--:|
+| Fake news | 거짓·오도 내용을 실제 뉴스처럼 제시 | ❌ |
+| Misinformation | 잘못된 정보 (고의 아닐 수 있음) | ❌ |
+| Disinformation | 속일 의도로 만든 거짓 정보 | ❌ |
+| Deepfake | AI로 생성·조작해 실제처럼 보이는 미디어 | ✅ |
+| **Deepfake-enabled disinformation** | **deepfake로 허위 사실을 믿게 만드는 것** | ✅ |
 
-즉, 단순 Fake/Real 분류를 넘어 **설명 가능한(explainable)** 탐지를 목표로 한다.
+이 프로젝트의 대상은 **맨 아래 줄**이다.
 
----
+구체적 시나리오 — SNS에 이런 영상이 돈다:
 
-## 2. 전체 파이프라인
+> **Jamie Dimon (JPMorgan CEO)**: "저희는 이번 분기 100억 달러의 예상치 못한 손실을 기록했습니다."
+
+영상은 AI 합성이고, 발언 내용도 사실이 아니다. 주가는 이미 움직인다.
+이건 가상의 위협이 아니라 FINRA와 SEC가 투자자·기업에 실제로 경고한 사기 유형이다.
+
+### 1.2 왜 두 판정을 분리하는가
+
+시스템은 두 질문에 **따로** 답한다.
 
 ```
-                ┌──────────────── INPUT: 뉴스 게시물 (이미지 + 텍스트) ────────────────┐
-                │                                                                      │
-        ┌───────▼────────┐                                              ┌──────────────▼─────────────┐
-        │     IMAGE      │                                              │           TEXT             │
-        └───────┬────────┘                                              └──────────────┬─────────────┘
-                │                                                                      │
-    ┌───────────▼────────────┐                                        ┌────────────────▼───────────────┐
-    │  Object Detection      │                                        │  NLP (BERT / DeBERTa, 영어)    │
-    │  (YOLOv8 / DETR)       │                                        │  - NER: PERSON, ORG, PRODUCT,  │
-    │  PERSON / LOGO /       │                                        │    LOCATION, DATE, MONEY       │
-    │  PRODUCT / CHART /     │                                        │  - Event/Relation Extraction   │
-    │  DOCUMENT / TEXT_REGION│                                        │    (예: 삼성전자 —CONTRACT_WITH→ │
-    └───────────┬────────────┘                                        │     NVIDIA, AMOUNT ₩20조)      │
-                │ bbox crop                                           └────────────────┬───────────────┘
-    ┌───────────▼────────────┐                                                         │
-    │ Visual Entity          │                                                         │
-    │ Recognition            │                                                         │
-    │  PERSON → 얼굴/인물 인식 │                                                        │
-    │  LOGO   → CLIP/로고분류 │                                                         │
-    │  CHART/TEXT → OCR      │                                                         │
-    └───────────┬────────────┘                                                         │
-                │        visual entities                     textual entities          │
-                └───────────────────────┐             ┌────────────────────────────────┘
-                                ┌───────▼─────────────▼────────┐
-                                │   Cross-modal Matching       │
-                                │   visual ↔ textual entity    │
-                                │   MATCH / MISMATCH / UNKNOWN │
-                                └──────────────┬───────────────┘
-                                ┌──────────────▼───────────────┐
-                                │  Cross-modal Attention Fusion│
-                                │  - Entity consistency        │
-                                │  - Event consistency         │
-                                │  - Image/Text similarity     │
-                                └──────────────┬───────────────┘
-                                ┌──────────────▼───────────────┐
-                                │  OUTPUT: Fake probability    │
-                                │  + 근거 (mismatch entity 목록) │
-                                └──────────────────────────────┘
+Q1. 이 영상은 AI로 조작되었는가?          → Media Authenticity
+Q2. 영상 속 금융 주장은 신뢰할 만한가?      → Claim Credibility
 ```
 
+합치지 않는 이유는 명확하다. **조작된 영상이 참말을 할 수 있고, 진짜 영상이 거짓말을 할 수 있다.**
+두 신호를 하나의 "Fake News Probability"로 뭉개면 정보가 사라지고, 무엇보다 그렇게 학습시킬 근거가 없다
+(→ §8.3). 대신 두 축을 그대로 보여주고 조합만 해석한다.
+
+### 1.3 핵심 연구 질문
+
+| RQ | 질문 | 평가 방식 |
+|---|---|---|
+| **RQ1** | 얼굴 ROI를 Object Detection으로 추출하면 full-frame 대비 deepfake 탐지가 개선되는가? | 정량 (paired AUROC) |
+| **RQ1-b** | ROI를 얼마나 넓게 잘라야 하는가 — 배경 문맥은 도움인가 방해인가? | 정량 (paired AUROC) |
+| **RQ2** | 금융 claim 분류에서 **증거 없이 claim만** 보고도 맞힐 수 있는가? 맞힌다면 그건 무엇을 학습한 것인가? | 정량 (Macro-F1 격차) |
+| **RQ3** | 조작 여부와 주장 신뢰도를 분리 제시하는 것이 단일 라벨보다 설명 가능한 위험 신호를 주는가? | 정성 (사례 분석) |
+
+**RQ1은 정직하게 말해 "확인"에 가깝다.** 얼굴 crop이 유리하다는 건 forensics에서 널리 쓰이는 전제다.
+그래서 RQ1-b를 붙였다. crop margin의 최적점은 실제로 알려져 있지 않고, 학습 한 번이면 답이 나온다.
+
+**RQ2는 이 프로젝트에서 가장 흥미로운 질문이다.** 자세한 건 §7.2.
+
 ---
 
-## 3. 딥러닝 사용 지점
+## 2. 시스템 구조
 
-| 컴포넌트 | 모델 | 역할 | 평가지표 |
-|---|---|---|---|
-| Object Detection | YOLOv8 / DETR (CNN·Transformer 검출기) | 이미지에서 PERSON, LOGO, PRODUCT, CHART, DOCUMENT, TEXT_REGION bbox 검출 | mAP@50, Precision, Recall |
-| Visual Entity Recognition | CLIP embedding, 얼굴/로고 분류기, 딥러닝 기반 OCR | bbox crop을 실제 entity로 식별 (예: "Jensen Huang", "NVIDIA"), 차트/문서에서 수치·날짜 추출 | Top-1 Accuracy, OCR CER |
-| Text NLP | `bert-base-uncased` (주 실험, 영어 Fakeddit 기준; 여유 시 DeBERTa 비교) — KLUE-BERT/KoELECTRA는 자체 한국어 금융 데모 전용 | 텍스트 인코딩 → (Epic 3) NER + Event/Relation Extraction | Accuracy/F1, NER F1 |
-| Cross-modal Fusion | Cross-modal Attention (region feature × token feature) | entity/event consistency 통합 → 최종 Fake/Real 분류 | Accuracy, Precision, Recall, F1, AUROC |
+```
+                         INPUT VIDEO
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+           VIDEO                            AUDIO
+              │                               │
+      Frame Sampling (2 fps)          FFmpeg 16kHz mono
+              │                               │
+      ┌───────▼────────┐                      │
+      │ Face Detection │  ← Object Detection  │
+      │  YOLOv8n-Face  │                      │
+      └───────┬────────┘                Whisper (STT)
+              │ bbox + margin                 │
+         Face Crop 224²                  Transcript
+              │                               │
+      ┌───────▼────────┐              금융 문장 필터
+      │   Deepfake     │                      │
+      │ EfficientNet-B0│              ┌───────▼────────┐
+      └───────┬────────┘              │ Claim Classifier│  ← NLP
+              │                       │ DeBERTa-v3-small│
+     frame prob → median              └───────┬────────┘
+              │                               │
+      Video-level P(fake)              Claim label + conf
+              └───────────────┬───────────────┘
+                              │
+                      RISK MATRIX (§8.3)
+```
+
+**딥러닝 사용 지점 4곳**: Object Detection(YOLO) · 이미지 분류(EfficientNet) · 음성인식(Whisper) · **NLP 텍스트 분류(DeBERTa)**.
+이 중 NLP는 선택이 아니라 필수 축이며, 실제로 fine-tuning하고 별도 ablation으로 평가한다.
 
 ---
 
-## 4. 예시 시나리오
+## 3. 48시간 범위
 
-> **기사 텍스트**: "삼성전자, NVIDIA와 20조 원 규모 AI 칩 공급 계약 체결 — Jensen Huang CEO 서명식 참석"
->
-> **첨부 이미지**: AMD 행사장에서 Lisa Su가 발표하는 사진
+### 구현한다
 
-| 단계 | 결과 |
+- 영상 frame sampling → 얼굴 검출 → crop
+- Deepfake 이진 분류 (full-frame baseline vs face ROI)
+- Whisper STT (pretrained inference only)
+- 금융 claim 분류 (DistilBERT baseline vs DeBERTa, claim-only vs claim+evidence)
+- 통합 추론 파이프라인 + Streamlit 데모
+- 신뢰구간을 포함한 평가표
+
+### 하지 않는다 — 그리고 그 이유
+
+| 제외 항목 | 이유 |
 |---|---|
-| Object Detection | PERSON bbox 1개, LOGO bbox 1개 검출 |
-| Visual Entity Recognition | PERSON → "Lisa Su", LOGO → "AMD" |
-| Text NER / Event | ORG: 삼성전자, NVIDIA / PERSON: Jensen Huang / MONEY: ₩20조 / Event: CONTRACT_WITH |
-| Cross-modal Matching | "Jensen Huang" vs "Lisa Su" → **MISMATCH**, "NVIDIA" vs "AMD" → **MISMATCH** |
-| 최종 출력 | Fake probability 0.93 + 근거: "이미지 속 인물·로고가 기사 주장 entity와 불일치" |
+| End-to-end multimodal fusion | joint label이 붙은 데이터셋이 존재하지 않음 (§8.3) |
+| Audio deepfake detection | 별도 데이터셋(ASVspoof/FakeAVCeleb) 확보 시간 없음 |
+| Lip-sync 정합성 분석 | 구현 난이도 대비 이틀 예산 초과 |
+| 실시간 evidence retrieval | 외부 API·인덱싱 필요, PoC 범위 밖 |
+| CEO 신원 인식 (face recognition) | 인물 DB 구축 필요 |
+| Object detector 신규 학습 | GT bbox 라벨링 불가 (§6.3) |
+| DFDC 전체(10만+) 학습 | 다운로드만 며칠 |
+
+---
+
+## 4. 산출물
+
+### 4.1 모델
+
+```
+models/
+├── face_detector/            # YOLOv8n-Face (pretrained, 학습 안 함)
+├── deepfake_fullframe.pt     # baseline
+├── deepfake_roi.pt           # proposed
+└── claim_classifier/         # DeBERTa-v3-small fine-tuned
+```
+
+### 4.2 추론 출력
+
+```json
+{
+  "video": "sample_001.mp4",
+  "media": {
+    "face_detected": true,
+    "frames_used": 18,
+    "deepfake_probability": 0.91,
+    "aggregation": "median"
+  },
+  "speech": {
+    "transcript": "NVIDIA reported a 40 percent decline in quarterly revenue.",
+    "financial_sentences": 1
+  },
+  "claim": {
+    "text": "NVIDIA reported a 40 percent decline in quarterly revenue.",
+    "label": "REFUTED",
+    "confidence": 0.84,
+    "caveat": "evidence retrieval 없음 — §9 참조"
+  },
+  "risk": {
+    "media_authenticity": "SYNTHETIC",
+    "claim_credibility": "LOW",
+    "combined": "HIGH RISK"
+  }
+}
+```
+
+### 4.3 결과 파일
+
+```
+results/
+├── vision_metrics.json        # video-level, bootstrap CI 포함
+├── nlp_metrics.json           # 3-seed mean ± std
+├── ablation.csv               # 최종 비교표
+├── confusion_matrix_*.png
+└── qualitative_cases.md       # RQ3용 사례 분석
+```
 
 ---
 
 ## 5. 데이터셋
 
-- **Fakeddit** ([arXiv:1911.03854](https://arxiv.org/abs/1911.03854)) — 100만+ text-image 쌍, 2/3/6-way label. Phase 1 baseline 및 fusion 모델 학습의 주 데이터셋.
-- 금융 도메인 특화 평가를 위해 금융 뉴스 subset 필터링 및 소규모 자체 수집 데이터(금융 뉴스 + mismatch 이미지 합성) 활용 계획.
+### 5.1 DFDC Sample — Deepfake Vision
+
+**출처**
+- Meta: https://ai.meta.com/datasets/dfdc/
+- Kaggle: https://www.kaggle.com/competitions/deepfake-detection-challenge/data
+
+전체 DFDC는 10만 개 이상이라 손댈 수 없다. Kaggle이 제공하는 **sample training set**만 쓴다.
+
+**metadata 구조**
+
+```json
+{ "abc.mp4": { "label": "FAKE", "original": "xyz.mp4", "split": "train" } }
+```
+
+**내부 라벨 규약**
+
+```
+REAL = 0
+FAKE = 1
+```
+
+> ⚠️ **Day 1 첫 30분에 반드시 눈으로 확인할 것**: 실제 배포본의 라벨 문자열과 클래스 비율.
+> DFDC sample은 FAKE가 압도적으로 많다. 이 비율을 모르면 §6.2의 지표 선택이 통째로 틀어진다.
+
+**⚠️ 가장 중요한 전처리 조건 — family 단위 split**
+
+DFDC의 fake 영상은 특정 real 영상에서 파생된다. 파생 관계가 split을 가로지르면
+모델은 조작 흔적이 아니라 **인물 얼굴과 배경을 외운다.** 그러면 테스트 AUROC가 비현실적으로 높게 나오고,
+아무도 눈치채지 못한 채 "성공"으로 보고된다.
+
+```
+❌ 잘못됨              ✅ 올바름
+TRAIN: real_A         TRAIN: real_A, fake_A_1, fake_A_2
+TEST:  fake_A_1       TEST:  real_C, fake_C_1
+```
+
+`original` 필드로 family를 묶고, **family 전체를 하나의 단위로** train/val/test에 배정한다.
+`split_report.json`에 family 수·영상 수·클래스 비율을 남긴다.
+
+### 5.2 Fin-Fact — Financial NLP
+
+**출처**
+- GitHub: https://github.com/IIT-DM/Fin-Fact
+- HuggingFace: https://huggingface.co/datasets/amanrangapur/Fin-Fact
+
+```python
+from datasets import load_dataset
+ds = load_dataset("amanrangapur/Fin-Fact")
+```
+
+**사용 컬럼**: `Claim`, `Claim Label`, `Evidence`, `Justification`
+
+Evidence는 옵션이 아니라 **RQ2의 핵심 변수**다 (§7.2).
+
+> ⚠️ Day 2 첫 작업: 라벨 분포와 클래스별 표본 수 확인.
+> 최소 클래스가 50 미만이면 Macro-F1이 불안정해지므로 클래스 병합 여부를 그 자리에서 결정한다.
+
+### 5.3 얼굴 검출기 — pretrained, 학습 안 함
+
+- WIDER FACE 벤치마크: https://shuoyang1213.me/WIDERFACE/
+- pretrained 구현: https://github.com/lindevs/yolov8-face
+
+**직접 학습하지 않는다.** 이 프로젝트에서 detector의 역할은 성능 경쟁이 아니라 **ROI 공급**이다.
+detector를 학습 대상으로 삼는 순간 bbox 라벨링이 필요해지고, 그건 이틀 예산을 초과한다.
+
+### 5.4 데모 영상 — 직접 만든다 (필수)
+
+**DFDC 영상 속 사람들은 금융 얘기를 하지 않는다.** 일반인이 아무 말이나 하는 영상이다.
+따라서 DFDC로 통합 데모를 돌리면 NLP 칸이 **항상 비어 있다.**
+
+데모용으로 금융 발언이 담긴 영상 10~15개를 별도로 준비한다 (TTS 합성 또는 직접 녹음, Fin-Fact claim 문장 낭독).
+이건 학습 데이터가 아니라 **파이프라인 시연 및 RQ3 정성 분석용**이며, README와 발표에서 그렇게 명시한다.
+
+### 5.5 (선택) FakeAVCeleb
+
+https://github.com/DASH-Lab/FakeAVCeleb — 영상+합성 음성을 함께 제공해 이상적이지만,
+**다운로드에 access request 승인이 필요하다.** 이틀 일정의 주 데이터로 의존하면 안 된다.
+승인이 미리 나 있으면 external test set으로만 쓴다.
 
 ---
 
-## 6. 프로젝트 구조 (예상)
+## 6. 평가 설계
 
-`✅` = Story 1.1~1.4에서 **실제 구현 완료**된 것만 표기한다. 나머지는 해당 Epic에서 추가된다.
+평가는 이 프로젝트에서 가장 공들인 부분이다. **Accuracy 한 줄로 끝내지 않는다.**
+
+### 6.1 왜 순진한 평가가 여기서 특히 위험한가
+
+세 가지 함정이 겹쳐 있다.
+
+**함정 1 — frame-level AUROC는 가짜 정밀도를 만든다.**
+같은 영상에서 뽑은 20개 프레임은 서로 독립이 아니다. frame 단위로 재면 n이 수천으로 부풀고
+신뢰구간이 인위적으로 좁아진다. → **모든 vision 지표는 video-level에서만 보고한다.**
+프레임 확률은 median으로 집계한다 (평균보다 검출 실패 프레임에 강건).
+
+**함정 2 — 클래스 불균형에서 Accuracy는 무의미하다.**
+DFDC sample은 FAKE 비율이 높다. 전부 FAKE로 찍어도 Accuracy가 높게 나온다.
+→ **주 지표는 AUROC와 Average Precision(PR-AUC)**, Accuracy는 참고용으로만 병기한다.
+
+**함정 3 — 표본이 작아서 작은 차이는 노이즈다.**
+family 단위로 자르고 나면 테스트 영상은 100개 미만일 가능성이 크다.
+이 규모에서 **AUROC 0.02 차이는 아무 의미가 없다.**
+→ 모든 수치에 **bootstrap 95% CI(2000회 resampling)**를 붙이고,
+모델 A vs B는 **같은 테스트 영상에 대한 paired bootstrap**으로 비교한다.
+CI가 0을 포함하면 "개선 없음"이라고 쓴다. 이건 사후에 정하지 않고 지금 못 박는다.
+
+### 6.2 지표 정의
+
+| 모듈 | 주 지표 | 보조 | 단위 | 불확실성 |
+|---|---|---|---|---|
+| Deepfake | **AUROC** | AP, F1, FAKE Recall, Accuracy | **video** | bootstrap 95% CI |
+| Deepfake A vs B | **ΔAUROC** | — | video (paired) | paired bootstrap CI |
+| NLP | **Macro-F1** | per-class P/R/F1, Accuracy | claim | 3-seed mean ± std |
+| Face Detection | **Detection Success Rate** | 수동 스팟체크 정확도 | frame | — |
+| STT | WER (선택) | — | 샘플 | 필수 아님 |
+
+**FAKE Recall을 반드시 별도 보고한다.** 금융 사기 스크리닝에서 놓친 deepfake의 비용이
+잘못 경보한 진짜 영상의 비용보다 훨씬 크다. 운영 임계값은 FAKE Recall 기준으로 잡는다.
+
+### 6.3 Object Detection 지표에 대한 정정
+
+**mAP@50은 이 프로젝트에서 계산할 수 없다.**
+
+mAP는 GT bounding box가 있어야 계산된다. DFDC에는 얼굴 bbox 정답이 없다.
+WIDER FACE 벤치마크 수치를 인용하는 건 가능하지만, 그건 **우리 데이터에서의 성능이 아니다.**
+
+대신 실제로 측정 가능한 두 가지를 보고한다.
 
 ```
-Fake_news/
+Detection Success Rate = 얼굴 ROI를 정상 추출한 영상 수 / 전체 영상 수
+Manual Spot Check      = 무작위 50 프레임의 bbox를 눈으로 검수, 오검출·미검출 건수 기록
+```
+
+이건 축소가 아니라 정정이다. **채울 수 없는 칸을 발표 자료에 넣는 것이 가장 큰 리스크다.**
+
+### 6.4 최종 결과표 (이 표를 채우는 것이 프로젝트 완료 조건)
+
+| # | 모듈 | 구성 | 주 지표 | 값 | 95% CI |
+|---|---|---|---|---|---|
+| V0 | Vision | Full frame → EfficientNet-B0 | AUROC | – | – |
+| V1 | Vision | YOLO ROI (tight) → EfficientNet-B0 | AUROC | – | – |
+| V2 | Vision | YOLO ROI (margin 1.3×) → EfficientNet-B0 | AUROC | – | – |
+| — | Vision | **V1 − V0 (paired)** | ΔAUROC | – | – |
+| — | Vision | **V2 − V1 (paired)** | ΔAUROC | – | – |
+| N0 | NLP | DistilBERT, claim only | Macro-F1 | – | ±std |
+| N1 | NLP | DeBERTa-v3-small, claim only | Macro-F1 | – | ±std |
+| N2 | NLP | DeBERTa-v3-small, claim + evidence | Macro-F1 | – | ±std |
+| D0 | Detection | YOLOv8n-Face | Success Rate | – | – |
+
+---
+
+## 7. Ablation — 무엇을 왜 비교하는가
+
+### 7.1 Vision: RQ1 / RQ1-b
+
+```
+V0  Full Frame ──────────────────► EfficientNet ──► P(fake)
+V1  Frame ─► YOLO ─► tight crop ──► EfficientNet ──► P(fake)
+V2  Frame ─► YOLO ─► 1.3× crop ───► EfficientNet ──► P(fake)
+```
+
+**V1 − V0**이 Object Detection을 파이프라인에 넣은 이유를 정량적으로 설명한다.
+**V2 − V1**은 실제로 답이 알려지지 않은 질문이다 — 조작 흔적은 얼굴 경계(턱선·헤어라인)에 몰려 있어
+margin이 도움이 될 수도 있고, 배경 노이즈가 들어와 해로울 수도 있다. 학습 한 번 값으로 답이 나온다.
+
+### 7.2 NLP: RQ2 — 이 프로젝트에서 가장 중요한 ablation
+
+순진한 설계는 이렇다: `Claim → DeBERTa → Label`.
+이게 잘 동작하면 기분은 좋은데, **무엇을 학습한 건지 설명할 수 없다.**
+
+생각해보면 명백하다. "Apple이 Tesla를 3천억 달러에 인수한다"가 참인지 거짓인지,
+**증거 없이 문장만 보고 알 방법은 없다.** 그런데도 모델이 맞힌다면 그건 사실 검증이 아니라
+**주제·문체·출처 아티팩트**를 학습한 것이다 (fact verification 문헌에서 반복 보고된 문제다).
+
+그래서 이렇게 설계한다.
+
+```
+N1   Claim              → DeBERTa → Label      # 아티팩트 상한선
+N2   Claim + Evidence   → DeBERTa → Label      # 실제 검증에 가까움
+```
+
+**N2 − N1 격차 자체가 결과다.**
+
+| 관찰 | 해석 |
+|---|---|
+| N1이 이미 높다 | 데이터셋에 아티팩트가 강하다 → 정직하게 보고, claim-only 수치의 의미 축소 |
+| N2 ≫ N1 | evidence가 실제 판별 정보를 제공 → NLP 축의 기여가 입증됨 |
+| N2 ≈ N1 | 모델이 evidence를 활용하지 못함 → 한계로 명시 |
+
+**어느 결과가 나와도 보고할 내용이 있다.** 이게 좋은 실험 설계의 조건이다.
+그리고 학습 한 번 더 돌리는 비용밖에 안 든다.
+
+> 결과를 본 뒤에 서사를 바꾸지 않는다. 위 해석표는 **실험 전에** 확정한 것이다.
+
+---
+
+## 8. 구현 세부
+
+### 8.1 전처리
+
+**Vision**
+
+```python
+sample_fps  = 2       # 초당 2 프레임
+max_frames  = 20      # 영상당 상한
+crop_size   = 224
+margin      = 1.0     # V1 / V2에서 1.0 vs 1.3
+```
+
+프레임당 confidence가 가장 높은 얼굴 하나만 사용한다 (다중 얼굴은 Nice-to-Have).
+얼굴이 한 프레임도 안 잡히면 해당 영상을 `detection_failed`로 기록하고
+**분류 평가에서 제외하되 Detection Success Rate에는 반드시 포함**한다.
+검출 실패 영상을 조용히 버리면 성능이 낙관적으로 왜곡된다.
+
+정규화는 ImageNet 통계 (`mean=[0.485,0.456,0.406]`, `std=[0.229,0.224,0.225]`).
+
+**Audio → NLP**
+
+```bash
+ffmpeg -i input.mp4 -ar 16000 -ac 1 output.wav
+```
+
+Whisper로 전사 후 문장 분리 → 금융 키워드 포함 문장만 선택:
+
+```
+revenue, profit, loss, earnings, guidance, acquisition, merger,
+stock, shares, dividend, investment, billion, million, quarter, SEC
+```
+
+키워드 필터는 학습 대상이 아닌 **규칙 기반 라우팅**이다. README와 발표에서 그렇게 명시한다.
+
+### 8.2 학습
+
+| | Deepfake Classifier | Claim Classifier |
+|---|---|---|
+| 모델 | EfficientNet-B0 (ImageNet) | DeBERTa-v3-small / DistilBERT |
+| 1단계 | backbone freeze, 2–3 epoch | — |
+| 2단계 | 상위 블록 unfreeze, 2–5 epoch | 3–5 epoch |
+| LR | 1e-3 → 1e-4 | 2e-5 |
+| Batch | 32 | 16 |
+| max_len | — | 256 (claim) / 512 (claim+evidence) |
+| 기타 | AMP, early stopping | AMP, early stopping, 3 seeds |
+
+**모델 계약** — Vision/NLP 모두 동일 인터페이스를 지킨다:
+
+```python
+model(batch: dict) -> logits  # [B, num_classes]
+```
+
+이 계약 하나로 Trainer·평가 코드를 두 축이 공유한다. 이틀 일정에서 이건 사치가 아니라 필수다.
+
+### 8.3 두 축을 왜 합치지 않는가
+
+다음과 같은 융합은 **하지 않는다.**
+
+```
+0.6 × Deepfake Score + 0.4 × Claim Score = Fake News Score   ← 근거 없음
+```
+
+가중치를 정할 근거가 없다. deepfake 라벨과 금융 claim 라벨이 **동시에 붙어 있는 데이터셋이 존재하지 않기 때문**이다.
+임의의 계수를 붙이면 숫자는 나오지만 검증할 방법이 없고, 이건 데이터셋의 한계를 숨기는 행위다.
+
+대신 두 축을 그대로 두고 **해석만 조합**한다.
+
+| Media Authenticity | Claim Credibility | 판정 | 의미 |
+|---|---|---|---|
+| REAL | Credible | **LOW** | 정상 |
+| SYNTHETIC | Credible | **SYNTHETIC MEDIA** | 조작 미디어지만 내용은 사실 (합성 앵커 등) |
+| REAL | Suspicious | **MISINFORMATION** | 진짜 사람의 허위·오도 발언 |
+| SYNTHETIC | Suspicious | **HIGH RISK** | deepfake-enabled disinformation |
+
+**이 4칸 구조가 RQ3의 답이다.** 단일 확률 하나로는 두 번째·세 번째 칸을 구분할 수 없다.
+발표에서는 각 칸의 실제 사례를 데모 영상으로 시연한다.
+
+---
+
+## 9. 이 프로젝트가 주장하지 않는 것
+
+정직한 한계 명시는 감점 요인이 아니라 설계 역량의 증거다.
+
+- **"AI가 금융 뉴스를 자동 팩트체크한다"고 주장하지 않는다.**
+  claim classifier는 외부 evidence retrieval을 하지 않는다. 임의의 새로운 발언에 대한
+  절대적 진실 판별기가 아니라, Fin-Fact 라벨 패턴을 학습한 분류기다.
+- **DFDC sample에서의 성능이 실제 금융 deepfake에 이전된다고 주장하지 않는다.**
+  DFDC는 금융 도메인 데이터가 아니다. 도메인 이전은 검증되지 않았고, 이를 한계로 명시한다.
+- **얼굴 검출 성능을 기여로 주장하지 않는다.** pretrained 모델을 그대로 쓴다.
+- **N1(claim-only) 점수가 높다고 사실 검증 능력의 증거로 해석하지 않는다** (§7.2).
+
+실서비스 수준으로 가려면 이 단계가 추가되어야 한다:
+
+```
+Claim → Evidence Retrieval → SEC Filing / IR / Trusted News → NLI Verification
+```
+
+---
+
+## 10. 폴더 구조
+
+```
+findeepfake-48h/
 ├── README.md
-├── requirements.txt          ✅
-├── configs/                  ✅ 실험 설정 (yaml) — `_base_` 상속 구조
-│   ├── base.yaml             ✅ 루트 (seed/device/output_dir/train/logging)
-│   ├── fakeddit.yaml         ✅ 데이터 파이프라인 + 금융 키워드
-│   ├── bert_only.yaml        ✅ BERT only baseline
-│   ├── resnet_only.yaml      ✅ ResNet only baseline
-│   └── late_fusion.yaml      ✅ BERT+ResNet late fusion
-├── data/                     Fakeddit 원본/전처리 (git 제외, 규약은 docs/DATA.md)
+├── requirements.txt
+├── configs/
+│   ├── vision_fullframe.yaml
+│   ├── vision_roi.yaml
+│   └── nlp_claim.yaml
+├── data/
+│   ├── raw/{dfdc,finfact}/
+│   ├── processed/{frames,faces,audio,text}/
+│   ├── demo_videos/              # §5.4 직접 제작
+│   └── splits/{train,val,test}.csv + split_report.json
 ├── src/
-│   ├── data/                 ✅ 라벨 매핑·전처리·분할·금융 subset·FakedditDataset·데이터셋 레지스트리
-│   ├── vision/               YOLOv8 detection + visual entity recognition (Epic 2·4) — 미구현
-│   ├── text/                 NER / event extraction (Epic 3) — 미구현
-│   ├── matching/             Cross-modal entity matching (Epic 4) — 미구현
-│   ├── fusion/               ✅ 모델 레지스트리 + 인코더(TextEncoder/ImageEncoder) +
-│   │                            single-modal · late fusion 분류기
-│   │                            ※ cross-attention classifier는 Epic 2에서 추가 (미구현)
-│   ├── training/             ✅ 공통 Trainer (모든 Phase 공유)
-│   ├── evaluation/           ✅ 공통 지표 (Accuracy/P/R/F1/AUROC) + ablation 표 생성
-│   └── utils/                ✅ config(_base_ 상속·--set), seed, 로깅(CSV/TensorBoard)
-├── scripts/                  ✅ train/evaluate/predict, download/preprocess/filter_financial, collect_ablation
-├── tests/                    ✅ pytest
-├── outputs/                  ✅ 실험별 결과 (config 사본·best.pt·history.csv·metrics.json)
-└── demo/                     Gradio 데모 (Epic 5) — 미구현
+│   ├── common/                   # config, seed, trainer, metrics (두 축 공유)
+│   ├── preprocess/               # extract_frames, detect_faces, extract_audio, prep_finfact
+│   ├── vision/                   # dataset, model, train, evaluate
+│   ├── nlp/                      # dataset, model, train, evaluate
+│   └── inference/pipeline.py
+├── models/
+├── results/
+└── demo/app.py
 ```
-
-모델·데이터셋은 레지스트리에 등록되어 config `model.name`/`data.name`으로 선택된다
-(현재 모델: `dummy`, `text_only`, `image_only`, `late_fusion`). 모든 모델은
-`forward(batch: dict) -> logits [B,2]`, 라벨 키 `label` 계약을 지키므로 Trainer 수정 없이 교체된다
-— 상세는 [`docs/bmad/architecture.md`](docs/bmad/architecture.md) "Architecture Contracts" 참조.
 
 ---
 
-## 7. 설치 및 실행
+## 11. 48시간 일정
 
-### 설치 (Python 3.10+)
+### D-1 (전날 밤, 30~60분) — 이걸 안 하면 이틀이 이틀이 아니다
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+- [ ] Kaggle 계정 + DFDC 대회 규약 동의 (승인 지연 가능)
+- [ ] DFDC sample 다운로드 시작 (백그라운드)
+- [ ] `ffmpeg` 설치 확인
+- [ ] `pip install -r requirements.txt`, Whisper·YOLOv8n-Face 가중치 사전 다운로드
+- [ ] GPU 인식 확인 (`torch.cuda.is_available()`)
+
+### DAY 1
+
+| 시간 | 작업 | 산출물 |
+|---|---|---|
+| 09:00–10:00 | **라벨 인코딩 육안 확인**, 클래스 비율 측정 | `split_report.json` |
+| 10:00–12:00 | family 단위 split, frame sampling | `splits/*.csv` |
+| 13:00–15:00 | YOLO 검출 → face crop (tight / 1.3×) 생성 | `processed/faces/` |
+| 15:00–16:00 | Detection Success Rate + 수동 스팟체크 50건 | D0 |
+| 16:00–20:00 | V0 / V1 / V2 학습 | 체크포인트 3개 |
+| 20:00–22:00 | video-level 평가, bootstrap CI, paired 비교 | `vision_metrics.json` |
+
+### DAY 2
+
+| 시간 | 작업 | 산출물 |
+|---|---|---|
+| 09:00–10:00 | Fin-Fact 라벨 분포 확인, 클래스 병합 결정 | — |
+| 10:00–13:00 | N0 / N1 / N2 학습 (각 3 seed) | 체크포인트 |
+| 13:00–14:00 | Macro-F1, per-class, confusion matrix, 오류 분석 | `nlp_metrics.json` |
+| 14:00–16:00 | 데모 영상 10~15개 제작 + 통합 pipeline | `inference/pipeline.py` |
+| 16:00–18:00 | Streamlit 데모 | `demo/app.py` |
+| 18:00–20:00 | 최종 결과표, RQ3 정성 사례, README 갱신, 스크린샷 | `ablation.csv` |
+
+**버퍼 없음이 이 일정의 유일한 약점이다.** 지연 시 포기 순서를 미리 정해둔다:
+
+```
+1순위 포기: V2 (margin ablation)  → RQ1-b 철회
+2순위 포기: N0 (DistilBERT)       → NLP baseline 비교 철회, N1 vs N2는 유지
+3순위 포기: Streamlit 데모        → CLI 출력 + 스크린샷으로 대체
+절대 포기 불가: family split · video-level 평가 · bootstrap CI · N1 vs N2
 ```
 
-Phase 1 스캐폴딩 실행에는 `torch`, `scikit-learn`, `PyYAML`, `pytest`만 있으면 충분하다.
-`ultralytics` / `paddleocr` / `insightface` 등은 Epic 2 이후에 필요하다.
-
-### 학습 · 평가
-
-실험 하나는 config 파일 하나로 정의된다. `--set`으로 임시 오버라이드할 수 있고,
-실행 결과는 `outputs/<exp_name>/`에 **config 사본 + checkpoint + metrics.json + history.csv**로 남는다.
-
-```bash
-# 스캐폴딩 smoke run (더미 데이터, CPU)
-python scripts/train.py --config configs/base.yaml --set exp_name=smoke train.epochs=2 device=cpu
-
-# 저장된 checkpoint로 test split 평가
-python scripts/evaluate.py --config outputs/smoke/config.yaml --split test
-
-# 테스트
-python -m pytest tests -q
-```
-
-### 데이터 준비 (Fakeddit)
-
-원본 데이터는 라이선스상 repo에 포함되지 않는다. 디렉토리 규약·라벨 매핑·준비 절차는
-**[`docs/DATA.md`](docs/DATA.md)** 참조.
-
-```bash
-python scripts/download_fakeddit.py --root data/fakeddit --check   # 배치 안내/점검
-python scripts/preprocess_fakeddit.py --root data/fakeddit         # 클린 manifest + 고정 분할
-python scripts/filter_financial.py --config configs/fakeddit.yaml  # 금융 subset (FR11)
-python scripts/train.py --config configs/fakeddit.yaml
-```
-
-> 라벨 규약: 내부는 **0=REAL, 1=FAKE**이고 Fakeddit 원본 `2_way_label`은 그 **반대**(1=real)다.
-> 변환은 반드시 `src/data/labels.py`의 `map_fakeddit_2way_label()`을 거친다.
-
-`configs/base.yaml`을 `_base_`로 상속해 Phase별 config를 만든다 (모델·데이터만 교체 → ablation 성립).
-
-### Phase 1 baseline 3종 (ablation table, FR10)
-
-```bash
-python scripts/train.py --config configs/bert_only.yaml      # BERT only
-python scripts/train.py --config configs/resnet_only.yaml    # ResNet only
-python scripts/train.py --config configs/late_fusion.yaml    # BERT+Image late fusion (인코더 frozen)
-# (b) end-to-end fine-tuning
-python scripts/train.py --config configs/late_fusion.yaml \
-    --set model.freeze_encoders=false exp_name=late_fusion_e2e train.lr=0.00002
-
-# 세 실험의 test 지표를 한 표로 취합 → outputs/ablation_table.csv + docs/bmad/results/ablation.md
-python scripts/collect_ablation.py
-```
-
-> 오프라인/CI에서는 `--set model.text.pretrained=false model.image.pretrained=false`로
-> 랜덤 초기화 경로를 쓴다 (네트워크 접근 0회).
-
-### 단일 샘플 추론
-
-```bash
-python scripts/predict.py --config outputs/late_fusion/config.yaml \
-    --image data/fakeddit/images/abc.jpg --text "tesla stock soars after earnings"
-# 출력: {"fake_prob": 0.87, "label": 1, "label_name": "FAKE", "elapsed_sec": 0.42}
-```
-
-### 근거(mismatch) 포함 추론 — Epic 4 완료 후 (계획)
-
-Epic 4에서 entity consistency가 붙으면 동일한 `scripts/predict.py`가 mismatch 근거를 함께 출력한다.
-
-```bash
-python scripts/predict.py --config outputs/phase4/config.yaml \
-    --image sample.jpg --text "삼성전자, NVIDIA와 20조 계약..."
-# (계획) 출력: fake_prob=0.93, mismatches=[("Jensen Huang","Lisa Su"), ("NVIDIA","AMD")]
-```
-
-### 단계별 개발 로드맵
-
-| Phase | Epic | 내용 | 상태 |
-|---|---|---|---|
-| 1 | Epic 1 | Baseline: ResNet(이미지) + BERT(텍스트) → late fusion (Fakeddit) + 공용 Trainer/Config/평가 | 구현 완료(실데이터 학습 미실행) |
-| 2 | Epic 2 | + YOLO object regions → Region Encoder → Cross Attention | 예정 |
-| 3 | Epic 3 | + NER / Entity Extraction (텍스트) | 예정 |
-| 4 | Epic 4 | + Visual–Textual entity consistency score → 최종 모델 | 예정 |
-| 마무리 | Epic 5 | 전체 ablation 취합, 금융 셋 최종 평가, Gradio 데모, 리포트 | 예정 |
-| (병행, 3~7주차) | Epic 6 | FinFact-Eval — 자체 금융 held-out 평가셋 구축 (Epic 5 착수 전 완료) | 예정 |
-
-(Phase↔Epic 대응 상세는 [`docs/DEV_PLAN.md` §0](docs/DEV_PLAN.md) 참조.)
-
-핵심 실험: **Ablation table** (BERT only / ResNet only / BERT+Image / +Object Detection / +Entity consistency) — object-level 증거와 entity 불일치 정보가 F1을 추가로 개선함을 보이는 것이 발표 포인트.
+아래 4개는 빼면 **결과 자체가 무의미해지므로** 어떤 상황에서도 유지한다.
 
 ---
 
-## 8. 관련 연구
+## 12. 완료 기준
 
-- **EM-FEND** — Visual/Textual Entity Inconsistency 기반 fake news detection ([arXiv:2108.10509](https://arxiv.org/abs/2108.10509))
-- **CFFN** — Word-region consistency 기반 multimodal detection ([arXiv:2311.01807](https://arxiv.org/abs/2311.01807))
-- **Event-Radar** — Event-level graph 기반 multimodal fake news detection (ACL 2024)
-- **Fakeddit** — 대규모 multimodal fake news 데이터셋 ([arXiv:1911.03854](https://arxiv.org/abs/1911.03854))
-- PROPOR 2026 — Financial fake news multimodal detection framework
+### 필수
+
+- [ ] family 단위 split 적용 및 `split_report.json` 생성
+- [ ] 영상 1개 입력 → 얼굴 bbox · deepfake 확률 · transcript · claim label 전부 출력
+- [ ] V0 vs V1 **video-level paired AUROC + CI** 산출
+- [ ] N1 vs N2 **Macro-F1 (3-seed mean±std)** 산출
+- [ ] Detection Success Rate + 수동 스팟체크 기록
+- [ ] §6.4 최종 결과표 전부 채움
+- [ ] 한계(§9)를 README와 발표자료에 명시
+
+### Nice to Have
+
+- [ ] Grad-CAM으로 조작 영역 시각화
+- [ ] V2 margin ablation
+- [ ] FakeAVCeleb external test
+- [ ] 다중 얼굴 처리
+- [ ] STT WER 측정
 
 ---
 
-## 9. Change Log
+## 13. 기술 스택
 
-| Date | Version | Description | Author |
-|---|---|---|---|
-| 2026-08-10 | 1.1 | 프로젝트 구조를 Story 1.3/1.4 산출물까지 반영해 갱신(configs 5종 명시, `src/fusion/`의 "cross-attention classifier 완료" 허위 표기 제거 — 실제로는 미구현), 추론 명령을 `scripts/infer.py` → `scripts/predict.py`로 정정, 텍스트 backbone을 영어 주 실험 + 한국어 데모 전용으로 통일, 로드맵에 Phase↔Epic 매핑·상태 열 추가 | Winston (Architect) |
+```
+Python · PyTorch · torchvision · Ultralytics(YOLOv8-Face) · OpenCV · FFmpeg
+HuggingFace Transformers · DeBERTa-v3-small · Whisper · scikit-learn · Streamlit
+```
+
+---
+
+## 14. 제목 후보
+
+- **기본** — FinDeepfake-48h: Object Detection and NLP for Financial Deepfake Risk Screening
+- **포트폴리오형** — Multimodal Financial Deepfake Screening with Face Detection and Financial NLP
+- **논문형** — *Does Face-Level Object Detection Improve Deepfake Screening, and Can Claim-Only NLP Verify Financial Facts?* — A Lightweight Two-Track Study
+
+---
+
+## References
+
+- Meta DFDC — https://ai.meta.com/datasets/dfdc/
+- Kaggle DFDC — https://www.kaggle.com/competitions/deepfake-detection-challenge/data
+- WIDER FACE — https://shuoyang1213.me/WIDERFACE/
+- YOLOv8-Face (pretrained) — https://github.com/lindevs/yolov8-face
+- Fin-Fact — https://github.com/IIT-DM/Fin-Fact · https://huggingface.co/datasets/amanrangapur/Fin-Fact
+- FakeAVCeleb — https://github.com/DASH-Lab/FakeAVCeleb
+- Whisper — https://github.com/openai/whisper
+- FINRA, *AI and Investment Fraud* — https://www.finra.org/investors/insights/artificial-intelligence-and-investment-fraud
+- EU AI Act, deepfake 정의 및 라벨링 — https://digital-strategy.ec.europa.eu/en/policies/eu-icons-labelling-ai-generated-content
+
+---
+
+## License / Usage
+
+각 데이터셋과 pretrained 가중치는 원 저작자의 라이선스를 따른다.
+DFDC·FakeAVCeleb 등 실제 인물의 얼굴이 포함된 데이터는 제출·배포 전에 이용 조건을 다시 확인한다.
+데모용으로 제작한 합성 영상은 프로젝트 시연 목적으로만 사용하고 외부 배포하지 않는다.
