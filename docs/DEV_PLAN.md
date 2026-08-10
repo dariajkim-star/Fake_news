@@ -6,17 +6,35 @@
 
 ---
 
+## 0. Phase ↔ Epic 매핑
+
+본 문서는 **Phase 1~4** 체계로, PRD(`docs/bmad/prd.md`)와 스토리는 **Epic 1~6** 체계로 작업을 나눈다(Epic 6은 PRD v1.1에서 추가된 금융 평가셋 트랙이며 번호와 실행 순서가 일치하지 않는다). 두 체계는 아래와 같이 대응한다 (Epic 5는 Phase 4 이후의 마무리 구간에 해당하며 본 문서에서는 §5 스케줄의 "10주차 / 마무리"와 §8 최종 산출물이 그 역할을 한다).
+
+| Phase (DEV_PLAN) | Epic (PRD/stories) | 내용 | 주요 산출물 |
+|---|---|---|---|
+| 데이터 준비 (§2) | Epic 1 (Story 1.2) | Fakeddit 다운로드·전처리·분할·금융 subset | `src/data/`, `scripts/{download,preprocess}_fakeddit.py`, `filter_financial.py` |
+| Phase 1 | **Epic 1 — Baseline & 실험 인프라** | 공용 Trainer/Config/Evaluation + ResNet/BERT 단일 모달 + late fusion | `src/{training,evaluation,utils,fusion}/`, `configs/{bert_only,resnet_only,late_fusion}.yaml` |
+| Phase 2 | **Epic 2 — Object Detection & Region Cross-Attention** | YOLOv8 검출 + region encoder + cross-modal attention | `src/vision/`, `src/fusion/classifier.py` |
+| Phase 3 | **Epic 3 — Text Entities (NER/RE)** | NER + event/relation 추출, entity feature 결합 | `src/text/` |
+| Phase 4 | **Epic 4 — Cross-modal Entity Consistency** | visual↔textual entity 정렬, consistency feature, 최종 모델 | `src/matching/`, `src/pipeline.py` |
+| (§5 10주차 / §8) | **Epic 5 — 최종 평가 & 데모** | 전체 ablation 취합, 금융 셋 최종 평가, Gradio 데모, 리포트/발표자료 | `demo/`, `docs/bmad/results/` |
+| §2.3 (3~7주차, Epic 2~4와 병행) | **Epic 6 — FinFact-Eval 금융 held-out 평가셋** | 자체 금융 뉴스 수집 + mismatch 합성 Fake + annotation. 실행 순서상 **Epic 5 착수 전에 완료**되어야 한다 | 금융 평가셋(`custom_fin`) + annotation |
+
+> Epic 번호는 PRD가 정본이다. 본 문서의 Phase는 일정·작업 단위 관점의 뷰이며, ablation 행 정의(A1~A6, §6)의 정본 역시 PRD의 ablation 절이다.
+
+---
+
 ## 1. 공통 기술 스택
 
 | 구분 | 사용 기술 |
 |---|---|
 | Framework | PyTorch, PyTorch Lightning(선택) |
-| 텍스트 모델 | HuggingFace Transformers — BERT, KLUE-BERT, KoELECTRA, DeBERTa |
+| 텍스트 모델 | HuggingFace Transformers — 주 실험은 영어 `bert-base-uncased`(여유 시 DeBERTa 비교). KLUE-BERT/KoELECTRA는 **자체 한국어 금융 데모/평가 셋 전용** |
 | 이미지 모델 | torchvision ResNet-50, CLIP (openai/clip 또는 open_clip) |
 | Object Detection | Ultralytics YOLOv8 (fallback: HuggingFace DETR) |
 | OCR | EasyOCR 또는 PaddleOCR (딥러닝 기반) |
 | 얼굴 인식 | InsightFace 또는 facenet-pytorch (제한된 유명인 클래스) |
-| 데이터/실험 | pandas, scikit-learn, wandb(또는 TensorBoard) |
+| 데이터/실험 | pandas, scikit-learn, **CSV 로깅(`history.csv`) + TensorBoard** (구현 기준). wandb는 optional — 현재 코드 경로 없음 |
 | 데모 | Streamlit 또는 Gradio |
 
 ---
@@ -52,10 +70,10 @@
 **작업**
 - [ ] 데이터 로더 구현 (image + text pair, Fakeddit 2-way)
 - [ ] ResNet-50 (torchvision, ImageNet pretrained) 이미지 인코더
-- [ ] BERT/KLUE-BERT (HuggingFace) 텍스트 인코더 fine-tuning
+- [ ] BERT(`bert-base-uncased`, HuggingFace) 텍스트 인코더 fine-tuning — Fakeddit이 영어이므로 영어 backbone 기준
 - [ ] Late fusion: [CLS] embedding ⊕ image pooled feature → MLP classifier
 - [ ] Text-only / Image-only 단일 modality baseline도 함께 학습 (ablation 행 확보)
-- [ ] 학습/평가 루프, metric 로깅(wandb), checkpoint 저장 체계
+- [ ] 학습/평가 루프, metric 로깅(CSV `history.csv` 기본 / TensorBoard 선택), checkpoint 저장 체계 — 실행 산출물은 `outputs/<exp_name>/`에 `config.yaml`·`best.pt`·`history.csv`·`metrics.json`
 
 **모델/라이브러리**: PyTorch, torchvision, HuggingFace Transformers
 **성공 기준**: Fakeddit 2-way test Accuracy ≥ 80%, F1 ≥ 0.78; 재현 가능한 학습 스크립트 완성
@@ -77,7 +95,7 @@
 **목표**: 텍스트에서 NER + 간단한 event/relation 추출을 결합해 entity-aware 표현 확보
 
 **작업**
-- [ ] NER fine-tuning: KLUE-BERT/KoELECTRA(한국어) 또는 DeBERTa(영어, CoNLL/OntoNotes) — PERSON, ORG, PRODUCT, LOCATION, DATE, MONEY
+- [ ] NER fine-tuning: 주 실험은 DeBERTa/BERT(영어, CoNLL/OntoNotes), 한국어 데모 셋에 한해 KLUE-BERT/KoELECTRA — PERSON, ORG, PRODUCT, LOCATION, DATE, MONEY
 - [ ] 금융 도메인 소량 annotation으로 NER 보강 (MONEY/ORG 중심)
 - [ ] Event/Relation 추출: 규칙 기반 트리거(계약, 인수, 실적 발표 등) + dependency/템플릿 매칭 (경량화)
 - [ ] Entity embedding을 fusion 입력에 추가 (entity type embedding 포함)
@@ -169,3 +187,11 @@
 - [ ] **데모**: Streamlit/Gradio 웹 데모 (근거 시각화: bbox + entity 매칭 결과 표시)
 - [ ] **발표자료**: 문제 정의 → 아키텍처 → ablation 개선 곡선 → 데모 시연 구성
 - [ ] **데이터 산출물**: 금융 서브셋 필터링 스크립트, 자체 금융 가짜뉴스 셋(annotation 포함)
+
+---
+
+## 9. Change Log
+
+| Date | Version | Description | Author |
+|---|---|---|---|
+| 2026-08-10 | 1.1 | §0 Phase↔Epic 매핑 표 신설(Epic 5 대응 구간 명시), 실험 추적을 CSV/TensorBoard 우선(wandb optional)으로 정정, 텍스트 backbone을 영어 주 실험 + 한국어 데모 전용으로 통일, Phase 1 산출물 경로를 실제 구현(`outputs/<exp_name>/`)에 맞춤. §6 ablation 행 정의(A1~A6)는 PRD를 정본으로 두고 본 개정에서 손대지 않음 | Winston (Architect) |

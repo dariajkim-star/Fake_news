@@ -25,10 +25,11 @@ Approved
    - LOGO: 공개 로고 detection 데이터셋(예: LogoDet-3K/FlickrLogos 일부) 또는 CLIP zero-shot 후보 → 수작업 검수
    - PRODUCT: COCO 사물 클래스 subset(laptop, cell phone, bottle 등) → PRODUCT로 매핑
    - CHART/DOCUMENT/TEXT_REGION: 문서·차트 공개 데이터(예: DocLayNet/PubLayNet 일부, ICDAR text detection) 매핑 + Fakeddit 금융 subset 이미지 수작업 라벨링
-3. Fakeddit 금융 subset에서 샘플링한 이미지 최소 300장(권장 500장)에 대해 수작업 bbox 라벨링이 완료된다 (LabelImg/CVAT/Label Studio 중 택1, YOLO txt format으로 export).
+3. Fakeddit 금융 subset에서 샘플링한 이미지 **최소 150장**에 대해 수작업 bbox 라벨링이 완료된다 (LabelImg/CVAT/Label Studio 중 택1, YOLO txt format으로 export). 부족분은 공개 데이터셋(LogoDet-3K/FlickrLogos, DocLayNet/PubLayNet 등) 재활용을 우선한다 — 라벨링 인력 시간이 4주차에 Epic 6 수집과 충돌하므로 자체 annotation은 공개 데이터로 대체 불가능한 부분에 집중한다.
 4. 최종 데이터셋이 Ultralytics YOLO format(`images/{train,val,test}`, `labels/{train,val,test}`, `dataset.yaml`)으로 생성되며, split 비율은 대략 80/10/10, seed 고정으로 재현 가능하다.
 5. 데이터 검증 스크립트가 존재한다: 클래스별 instance 수 분포, 라벨 없는 이미지 수, bbox 좌표 정규화(0~1) 유효성 검사 결과를 출력한다.
 6. 클래스별 최소 instance 수가 리포트되고, 심각하게 부족한 클래스(예: 50개 미만)는 augmentation 또는 추가 라벨링 필요로 명시된다.
+7. **pseudo-label 앵커링 방지 gold set**: 위 150장과 별개로, pseudo-label 초안을 **보지 않고 맨손으로 라벨링한 gold set 30장**을 구축한다. 이 gold set을 정답으로 COCO pretrained pseudo-label의 **class별 recall(빠뜨린 박스 비율)**을 측정·리포트한다. pseudo-label 초안 위에 수정만 하는 방식은 누락 박스가 구조적으로 보이지 않으므로, gold set은 반드시 초안 없이 작성한다. gold set은 학습에 사용하지 않고 평가 전용으로 격리한다.
 
 ### Tasks / Subtasks
 
@@ -39,11 +40,14 @@ Approved
   - [ ] 외부 공개 데이터셋(LOGO, CHART/DOCUMENT/TEXT_REGION) 다운로드·클래스 매핑 변환 스크립트 작성
 - [ ] 수작업 라벨링 진행 (AC: 3)
   - [ ] 라벨링 도구 선정 및 가이드라인 문서(클래스 판정 기준, 애매 케이스 규칙) 작성 — `docs/bmad/labeling-guide.md`
-  - [ ] Fakeddit 금융 subset에서 이미지 300장 이상 샘플링(seed 고정) 후 bbox 라벨링, YOLO txt export
+  - [ ] Fakeddit 금융 subset에서 이미지 150장 이상 샘플링(seed 고정) 후 bbox 라벨링, YOLO txt export
 - [ ] YOLO format 데이터셋 빌드 (AC: 4)
   - [ ] `scripts/detection/build_dataset.py`: pseudo-label + 수작업 label 병합, 중복 제거, split 생성, `dataset.yaml` 출력
 - [ ] 데이터 검증 및 통계 리포트 (AC: 5, 6)
   - [ ] `scripts/detection/validate_dataset.py`: 클래스 분포/bbox 유효성/누락 검사, CSV 리포트 출력
+- [ ] gold set 30장 맨손 라벨링 (AC: 7)
+  - [ ] pseudo-label 미노출 상태로 라벨링(작업자에게 초안 파일 제공 금지), 별도 디렉토리 격리
+  - [ ] `scripts/detection/eval_pseudo_label.py`: gold set 대비 pseudo-label class별 recall/precision 리포트
 - [ ] Testing (모든 AC)
   - [ ] unit test: 클래스 매핑 함수, bbox 좌표 변환(xyxy↔YOLO normalized) 함수
 
@@ -53,7 +57,9 @@ Approved
 - **pseudo-label 품질**: COCO pretrained 매핑은 recall 확보용이며 precision은 수작업 검수로 보완. confidence threshold는 config로 노출.
 - **클래스 판정 기준(라벨링 가이드 핵심)**: CHART는 축/데이터 시각화가 있는 영역, DOCUMENT는 계약서/공시 등 문서 전체 페이지 형태, TEXT_REGION은 이미지 내 임의의 텍스트 블록(자막, 워터마크, 스크린샷 텍스트). DOCUMENT 내부의 텍스트는 별도 TEXT_REGION으로 중복 라벨링하지 않는다.
 - **재현성**: 샘플링/분할 seed는 전역 config의 seed 사용 (NFR3).
-- **리스크**: PRD Checklist에 명시된 대로 라벨링 규모·비용은 이 스토리 착수 시 확정 — 300장으로 시작하고 mAP 결과에 따라 Story 2.2에서 증량 판단.
+- **리스크**: PRD Checklist에 명시된 대로 라벨링 규모·비용은 이 스토리 착수 시 확정 — mAP 결과에 따라 Story 2.2에서 증량 판단.
+- **앵커링 리스크(James 제기, PO 수용)**: pseudo-label 초안을 깔고 수정하게 하면 작업자는 "잘못 그려진 박스"는 고치지만 "아예 없는 박스"는 인지하지 못한다. 이 편향은 라벨 품질 지표에 잡히지 않고 mAP를 낙관적으로 만든다. gold set 30장이 유일한 방어선이므로 규모를 줄이더라도 이 30장은 유지한다.
+- **규모 축소 근거**: 300 → 150장. 4주차에 Epic 6 수집(주 30~40건)과 라벨링이 같은 사람 시간을 놓고 경합한다. mAP@50이 목표(0.5) 미달이면 Story 2.2에서 증량을 판단한다(기존 방침 유지).
 
 ### Testing
 
@@ -83,6 +89,7 @@ Approved
 5. 추론 wrapper 모듈 `src/vision/detector.py`가 구현된다: 이미지 경로/PIL 입력 → architecture의 Detection 스키마(`region_id, class_id, class_name, bbox [x1,y1,x2,y2], conf`) 리스트 반환. confidence threshold(기본 0.4)와 max detections(기본 R=16), NMS IoU(기본 0.5)는 config로 제어 (architecture Detector 컴포넌트 스펙 준수).
 6. Fakeddit 금융 subset 전체 이미지에 대한 배치 추론 스크립트가 detection 결과를 JSON(이미지 id → detections)으로 캐싱한다 — 이후 Story 2.3/Epic 4의 입력.
 7. 대표 이미지 20장에 대한 bbox 시각화 샘플이 저장되어 정성 확인이 가능하다.
+8. **하드 게이트**: 본 스토리를 완료(Done) 처리하려면 **Story 6.1의 Real 샘플 수집이 착수되어 최소 30건이 `sources.jsonl`에 기록되고 `scripts/validate_eval_sources.py` 검증을 통과**해야 한다. Epic 6은 번호가 6이지만 실행은 3~7주차 병행이며, 이 게이트는 문서 주석이 아닌 완료조건으로 순서를 강제하기 위한 것이다. 검증 통과 로그를 완료 증빙으로 첨부한다.
 
 ### Tasks / Subtasks
 
@@ -224,3 +231,7 @@ Approved
 - unit test: 모델 forward/mask/attention (위 Tasks 참조).
 - 모델 검증: held-out test split에서 5개 지표 산출 + ablation row 기록을 완료 조건으로 한다.
 - smoke test: 소규모 subset(예: 500 샘플) 1 epoch overfit 확인으로 학습 루프 정상 동작 검증.
+
+## Change Log
+
+- 2026-08-10 (PO Sarah): Story 2.1 AC3 자체 annotation 300 → 150장 축소(공개 데이터 재활용 우선), AC7 gold set 30장 신설(pseudo-label 앵커링 방지, recall 측정). Story 2.2 AC8 하드 게이트 신설(Story 6.1 최소 30건 착수). Story 2.1·2.2 Status는 Approved 유지 — 범위 축소와 검증 강화이며 구현 착수 전이라 재승인 불필요(PO 재승인 완료).

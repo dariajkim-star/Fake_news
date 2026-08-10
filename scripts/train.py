@@ -44,6 +44,19 @@ def resolve_device(requested: str) -> torch.device:
     return torch.device(requested)
 
 
+def build_optimizer(model, cfg, trainer_cfg) -> torch.optim.Optimizer | None:
+    """`train.head_lr`가 있고 모델이 param group을 제공하면 lr을 분리한다.
+
+    (Story 1.3 — 인코더 lr 2e-5 / head lr 1e-4처럼 차등을 주기 위한 경로.
+    None을 반환하면 Trainer가 기본 AdamW를 만든다.)
+    """
+    head_lr = cfg.get("train.head_lr", None)
+    if head_lr is None or not hasattr(model, "param_groups"):
+        return None
+    groups = model.param_groups(encoder_lr=trainer_cfg.lr, head_lr=float(head_lr))
+    return torch.optim.AdamW(groups, lr=trainer_cfg.lr, weight_decay=trainer_cfg.weight_decay)
+
+
 def main(argv: list[str] | None = None) -> dict:
     args = parse_args(argv)
     cfg = load_config(args.config, overrides=args.overrides)
@@ -59,11 +72,13 @@ def main(argv: list[str] | None = None) -> dict:
 
     loaders = build_dataloaders(cfg, splits=("train", "val"))
     model = build_model(cfg)
+    trainer_cfg = TrainerConfig.from_config(cfg)
     trainer = Trainer(
         model=model,
-        cfg=TrainerConfig.from_config(cfg),
+        cfg=trainer_cfg,
         out_dir=out_dir,
         device=device,
+        optimizer=build_optimizer(model, cfg, trainer_cfg),
         logger=build_logger(out_dir, str(cfg.get("logging.backend", "csv"))),
     )
 

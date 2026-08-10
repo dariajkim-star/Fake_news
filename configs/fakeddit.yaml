@@ -1,0 +1,64 @@
+# Fakeddit 데이터 파이프라인 config (Story 1.2)
+# 실데이터 준비 절차는 docs/DATA.md 참조.
+_base_: base.yaml
+
+exp_name: fakeddit
+
+data:
+  name: fakeddit
+  root: data/fakeddit
+  manifest_dir: data/fakeddit/processed   # <manifest_dir>/{train,val,test}.csv
+  image_root: data/fakeddit               # manifest의 상대 image_path 기준 루트
+  # splits:                               # 분할 파일을 개별 지정하고 싶을 때
+  #   train: data/fakeddit/processed/train.csv
+  #   val: data/fakeddit/processed/val.csv
+  #   test: data/fakeddit/processed/test.csv
+
+  modality: both        # text | image | both (Story 1.3에서 단일 모달로 전환)
+  image_size: 224       # ResNet 입력 (ImageNet mean/std 정규화)
+  batch_size: 32
+  num_workers: 0        # Windows 기본값
+
+  tokenizer:
+    name: bert-base-uncased   # null이면 tokenizer 없이 raw text만 전달 (오프라인 경로)
+    max_length: 128
+    truncation: true
+    local_files_only: false   # 오프라인 캐시만 쓰려면 true
+
+  # 단일 GPU 제약(NFR1) — 학습 샘플 수 제한. null이면 전량 사용.
+  subsample: null
+  # subsample_per_split:      # split별로 따로 제한하고 싶을 때
+  #   train: 20000
+  #   val: 2000
+  #   test: 2000
+
+  # 금융 subset 키워드 (FR11) — scripts/filter_financial.py가 사용
+  financial_keywords:
+    - stock
+    - stocks
+    - share price
+    - invest
+    - investor
+    - investment
+    - ceo
+    - cfo
+    - earnings
+    - revenue
+    - profit
+    - ipo
+    - crypto
+    - cryptocurrency
+    - bitcoin
+    - merger
+    - acquisition
+    - bank
+    - banking
+    - nasdaq
+    - dow jones
+    - hedge fund
+    - dividend
+    - bankruptcy
+    - wall street
+    - interest rate
+    - inflation
+    - market cap

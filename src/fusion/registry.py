@@ -49,8 +49,18 @@ def _build_dummy(cfg: Config) -> nn.Module:
     return DummyClassifier(hidden_dim=int(cfg.get("model.hidden_dim", 32)))
 
 
+def _ensure_builtin_models() -> None:
+    """등록 side-effect를 위한 지연 import (순환 import 회피)."""
+    import importlib
+
+    for module in ("src.fusion.baseline",):
+        importlib.import_module(module)
+
+
 def build_model(cfg: Config) -> nn.Module:
     name = str(cfg.get("model.name", "dummy"))
+    if name not in _REGISTRY:
+        _ensure_builtin_models()
     if name not in _REGISTRY:
         raise KeyError(f"등록되지 않은 model: {name!r} (사용 가능: {sorted(_REGISTRY)})")
     return _REGISTRY[name](cfg)

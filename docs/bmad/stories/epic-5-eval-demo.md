@@ -20,8 +20,9 @@ Approved
 2. 모든 실험은 동일한 train/val/test split과 고정 seed를 사용하며, `--seeds 42,43,44` 옵션으로 3-seed 실행 시 지표의 mean ± std를 산출한다.
 3. 각 실험 결과는 `outputs/ablation/{config_name}/{seed}/metrics.json`에 Accuracy, Precision, Recall, F1, AUROC가 저장되고, 실행에 사용된 config 사본과 git commit hash가 함께 기록된다.
 4. `scripts/report_ablation.py`가 전 결과를 집계하여 (a) Markdown 표(`outputs/ablation/ablation_table.md`), (b) CSV(`ablation_table.csv`), (c) A3→A4→A5→A6 F1 개선 곡선 plot(`ablation_curve.png`)을 생성한다.
-5. Ablation 결과 표에서 A6(+Entity consistency)의 F1이 A5 대비 기록되고, 개선 여부(+Δ%p)가 표에 명시된다 (개선 미달 시에도 수치가 정직하게 기록되어 Story 5.2의 분석 입력이 된다).
-6. Fakeddit 금융 subset test와 자체 금융 셋(held-out) 두 평가 셋 모두에 대해 A1~A6 결과가 산출된다.
+5. **핵심 가설(A5 → A6) 판정은 Fakeddit 금융 subset(5k~20k 규모, 3-seed 평균)에서 수행**하며, A6의 F1이 A5 대비 개선되었는지(+Δ%p)가 표에 명시된다(개선 미달 시에도 수치가 정직하게 기록되어 Story 5.2의 분석 입력이 된다). 자체 금융 셋(FinFact-Eval, n≈300)은 표본 규모상 구성 간 F1 차이에 대한 통계적 검정력이 없으므로 **핵심 가설의 판정 근거로 사용하지 않는다** — 자체 셋의 역할은 FR16 cross-modal matching 판정 정확도의 정답 소스, 정성적 근거 사례, 데모 예시다.
+6. Fakeddit 금융 subset test와 자체 금융 셋(held-out) 두 평가 셋 모두에 대해 A1~A6 결과가 산출된다. 단 자체 금융 셋 결과는 **유의성 주장 없는 보조 표**로 제시하며(FR10 v1.2), 구성 간 우열 판정에 사용하지 않는다.
+7. **착수 전제조건**: 본 스토리는 **Story 6.1~6.5가 모두 Done**인 상태에서만 착수한다. AC6의 자체 금융 셋 평가가 존재하지 않으면 ablation 매트릭스가 절반만 산출되며, 뒤늦게 셋이 완성되면 전 구성을 재실행해야 한다. 착수 시점에 Epic 6 완료 상태를 확인하고 그 사실을 실행 로그에 기록한다.
 
 ### Tasks / Subtasks
 - [ ] Task 1: Ablation config 세트 정비 (AC: 1, 2)
@@ -51,7 +52,7 @@ Approved
 - **컴퓨팅 제약(NFR1)**: A4~A6는 detector/NER 출력을 사전 계산 캐시(예: `data/cache/regions/`, `data/cache/entities/`)에서 로드 — ablation 재실행 시 upstream 모듈 재추론 방지.
 - **실험 추적(architecture)**: wandb를 1차 로깅 채널로 사용(run별 config/metric, ablation 비교 표). `metrics.json`은 wandb와 무관하게 항상 로컬 저장(재현 검증·report 스크립트 입력의 단일 source of truth). 오프라인 대안은 CSV logging.
 - **출력 경로**: architecture Source Tree의 `experiments/`가 실험 결과 루트다 — 본 스토리의 `outputs/ablation/`은 `experiments/ablation/`으로 매핑해 구현해도 무방하며, 최종 표는 어느 쪽이든 `docs/results/`로 복사한다(report 스크립트의 스캔 루트를 config로 주입).
-- **성공 기준(DEV_PLAN Phase 4)**: A6가 A5 대비 F1/AUROC +1%p 이상이면 가설 입증. 미달 시에도 결과를 그대로 기록하고 Story 5.2 error analysis를 대안 기여로 전환(PRD 리스크 3).
+- **성공 기준(미팅 확정, 2026-08-10)**: Fakeddit 금융 subset 3-seed 평균에서 A6가 A5 대비 F1/AUROC +1%p 이상이면 가설 입증. 자체 금융 셋 지표는 참고·정성 근거로만 병기한다(n≈300에서는 1%p 차이를 유의하게 구분할 검정력이 없다 — Analyst 검토: n=30 유형별 Wilson 95% CI 폭이 약 27%p, n=300에서 McNemar 검출에 필요한 차이는 8~10%p). 미달 시에도 결과를 그대로 기록하고 Story 5.2 error analysis를 대안 기여로 전환(PRD 리스크 3).
 
 ### Testing
 - Unit: config 상속/flag 파싱 테스트 — a1~a6 config 로드 시 기대 flag 조합이 나오는지 (`tests/test_ablation_configs.py`).
@@ -74,9 +75,10 @@ Approved
 ### Acceptance Criteria
 1. `scripts/error_analysis.py`가 test 셋에 대해 A6 모델의 예측·중간 산출물(detection bbox, visual entity, textual entity, match 판정, consistency score)을 샘플 단위로 dump한 `outputs/error_analysis/predictions.jsonl`을 생성한다.
 2. 오분류 샘플(FP/FN)이 자동 분류된다 — 최소 카테고리: (a) detection miss, (b) visual entity 오인식, (c) NER 누락/오류, (d) matching 오판(MATCH↔MISMATCH), (e) UNKNOWN 과다로 consistency 무효, (f) 모델 자체 오류(중간 산출물 정상).
-3. 자체 금융 셋의 mismatch 유형 annotation(PERSON/LOGO(ORG)/NUMBER/EVENT) 기준으로 유형별 MISMATCH 탐지 정확도(Precision/Recall) 표가 산출된다.
+3. 자체 금융 셋의 mismatch 유형 annotation을 정답으로 **전체 단위 1세트 지표**(3-way MATCH/MISMATCH/UNKNOWN accuracy + MISMATCH Precision/Recall/F1, pair 총계)가 CI와 함께 산출된다. **유형별 정량 비교 표는 산출·보고하지 않는다** (FR16 v1.2) — 유형당 n≈30에서 Wilson 95% CI 폭이 약 27%p라 유형 간 차이를 판별할 수 없기 때문이며, 유형별 특성은 AC5의 **정성 사례 3~5건**으로 제시한다. per-pair 원자료는 파일로 보존하되 표로 제시하지 않는다.
 4. A5 vs A6 예측이 갈린 샘플(A6가 새로 맞춘 것 / 새로 틀린 것) 목록이 추출되어 consistency feature의 기여·손해 사례를 각 5건 이상 확보한다.
-5. 분석 결과가 `docs/results/error_analysis.md`로 정리된다 — 카테고리별 비율 표, 유형별 정확도 표, 대표 사례 최소 6건(이미지 썸네일 + 텍스트 + 판정 근거 포함).
+5. 분석 결과가 `docs/results/error_analysis.md`로 정리된다 — 카테고리별 비율 표, 전체 단위 matching 지표(CI 병기), **mismatch 유형별 정성 사례 3~5건**, 대표 사례 최소 6건(이미지 썸네일 + 텍스트 + 판정 근거 포함).
+6. **미개선 시나리오 대응(사전 확정)**: A6가 A5 대비 F1 개선을 보이지 못한 경우, UNKNOWN 비율과 오류 카테고리 분포(특히 (b) visual entity 오인식, (e) UNKNOWN 과다)를 근거로 한 **"오류 전파 정량 분석" 절**이 `docs/results/error_analysis.md`에 포함되며, Story 5.4 발표 자료의 **결론 슬라이드가 이 절을 직접 참조**한다. 개선/미개선 판정은 **Story 5.1의 결과가 산출되는 시점에 확정하고 발표 프레임을 그 자리에서 고정한다** — 결과를 본 뒤 사후에 기준이나 서사를 조정하지 않는다.
 
 ### Tasks / Subtasks
 - [ ] Task 1: 예측·중간 산출물 dump 구현 (AC: 1)
@@ -84,8 +86,9 @@ Approved
 - [ ] Task 2: 오류 카테고리 자동 분류기 구현 (AC: 2)
   - [ ] rule 기반 분류: detection 출력 없음→(a), visual entity confidence<threshold 다수→(b)/(e), textual entity 0건→(c), gt mismatch 유형 존재하나 match=MATCH→(d) 등
   - [ ] 카테고리별 카운트/비율 집계 CSV 출력
-- [ ] Task 3: mismatch 유형별 정확도 산출 (AC: 3)
-  - [ ] 자체 금융 셋 annotation 로드 → 유형별 MISMATCH 판정 P/R 계산 (DEV_PLAN §4 "Cross-modal matching 판정 정확도")
+- [ ] Task 3: matching 판정 정확도 산출 (AC: 3)
+  - [ ] 자체 금융 셋 annotation 로드 → **전체 단위** 3-way accuracy + MISMATCH P/R/F1 + Wilson CI 계산 (DEV_PLAN §4 "Cross-modal matching 판정 정확도", FR16)
+  - [ ] per-pair 원자료 jsonl 보존 (유형 태그 포함) — 표로 제시하지 않고 정성 사례 선정 입력으로만 사용
 - [ ] Task 4: A5 vs A6 diff 분석 (AC: 4)
   - [ ] 두 구성의 predictions.jsonl join → flip 샘플 추출(`a6_fixed.jsonl`, `a6_broke.jsonl`), consistency score 분포 비교
 - [ ] Task 5: 리포트 작성 (AC: 5)
@@ -98,6 +101,7 @@ Approved
 - UNKNOWN 비율이 높은 샘플군(리스크: Visual Entity Recognition 정확도)은 별도 집계 — PRD FR12의 UNKNOWN 처리 정책이 오류 전파를 실제로 차단했는지 정량 확인.
 - 이미지 썸네일 포함 리포트는 markdown 상대 경로로 `outputs/error_analysis/cases/` 이미지를 참조 (repo 용량 고려, 640px 이하 리사이즈).
 - 개선 미달 시나리오: A6 F1이 A5 대비 개선되지 않았다면 (e)/(b) 카테고리 비율과 UNKNOWN 통계로 "consistency 신호가 노이즈에 희석된" 정도를 정량 제시 — 발표의 대안 기여 포인트.
+- **"실패를 기여로"가 FR10과 모순되지 않는 근거(PO 판정, 2026-08-10)**: FR10의 성공 기준은 "동일 조건에서 구성별 ablation 표를 산출한다"이지 "A6가 반드시 이겨야 한다"가 아니다. Story 5.1 AC5도 미달 수치의 정직한 기록을 이미 요구하고 있다. 따라서 미개선 시나리오를 사전에 설계해 두는 것은 성공 기준의 완화가 아니라 **결과에 따라 서사를 바꾸는 사후 합리화(HARKing)를 차단하는 장치**다. 판정 시점을 5.1 결과 산출 시점으로 못 박는 이유가 여기에 있다.
 
 ### Testing
 - Unit: 오류 카테고리 분류기 — 합성 jsonl 입력(각 카테고리별 최소 1건)으로 기대 카테고리 산출 검증 (`tests/test_error_analysis.py`).
@@ -203,3 +207,8 @@ Approved
 - 재현 검증(AC 4) 자체가 이 스토리의 핵심 테스트 — clean 환경 체크리스트(환경 생성 → 설치 → 데이터 → 평가 → 데모)를 문서화하고 결과(성공/수정 사항)를 기록.
 - 문서 링크·이미지 경로 무결성 확인 (README와 슬라이드 내 상대 경로 깨짐 없음, markdown lint 수준 점검).
 - 데모 backup 자산이 실제 최신 checkpoint 출력과 일치하는지 확인 (스크린샷 재캡처 기준: 최종 모델 확정 이후).
+
+## Change Log
+
+- 2026-08-10 (교차 확인 후속, PRD v1.2 §1 이관 사항): Story 5.1 AC6에 자체 셋 = 유의성 주장 없는 보조 표 명시, Story 5.2 AC3의 "유형별 MISMATCH P/R 표"를 "전체 단위 1세트 지표 + CI"로 교체하고 유형별 정량 표 산출 금지를 명문화(Wilson CI 근거 병기), AC5·Task 3을 정성 사례 기반으로 정정.
+- 2026-08-10 (PO Sarah): Story 5.1 AC5를 핵심 가설 판정 셋 확정(Fakeddit 금융 subset 3-seed, 자체 셋은 정성/FR16 전용)으로 교체, AC7 착수 전제조건(Story 6.1~6.5 Done) 신설. Story 5.2 AC6 신설(미개선 시 오류 전파 정량 분석 + 판정 시점 사전 고정), Dev Notes에 FR10 비모순 근거 기록. 두 스토리 모두 Status Approved 유지(착수 전, PO 재승인 완료).

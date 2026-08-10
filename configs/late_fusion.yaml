@@ -1,0 +1,52 @@
+# Story 1.4 — Late fusion baseline (BERT + ResNet), ablation table 3행
+# 실행:
+#   (a) frozen 인코더 + fusion head만 학습 (기본, 단일 GPU 권장 — NFR1)
+#       python scripts/train.py --config configs/late_fusion.yaml
+#   (b) end-to-end fine-tuning
+#       python scripts/train.py --config configs/late_fusion.yaml \
+#           --set model.freeze_encoders=false exp_name=late_fusion_e2e train.lr=0.00002
+_base_: fakeddit.yaml
+
+exp_name: late_fusion
+
+data:
+  modality: both          # 텍스트 + 이미지 둘 다 필요
+  image_size: 224
+  batch_size: 32
+  tokenizer:
+    name: bert-base-uncased
+    max_length: 128
+    truncation: true
+
+model:
+  name: late_fusion
+  num_classes: 2
+  freeze_encoders: true   # (a) 학습 모드. false면 (b) end-to-end fine-tuning
+  text:
+    model_name: bert-base-uncased
+    pretrained: true      # 오프라인/CI에서는 false (랜덤 초기화, 네트워크 접근 없음)
+    local_files_only: false
+    pooling: cls          # [CLS] 768-dim
+    proj_dim: null        # null이면 768 그대로 -> concat 768+2048=2816 (AC1)
+    dropout: 0.1
+    checkpoint: null      # Story 1.3의 save_encoder() 산출물 경로를 주면 인코더 재사용
+  image:
+    arch: resnet50
+    pretrained: true      # ImageNet weights. 오프라인/CI에서는 false
+    proj_dim: null        # null이면 2048 그대로
+    dropout: 0.1
+    checkpoint: null      # 예: outputs/resnet_only/image_encoder.pt
+  head:
+    hidden_dims: [512]    # concat 2816 -> 512 -> 2 (MLP fusion head)
+    dropout: 0.2
+
+train:
+  epochs: 10              # frozen 모드는 head만 학습하므로 epoch를 넉넉히
+  lr: 0.00002             # 인코더 lr (end-to-end 모드에서만 의미 있음)
+  head_lr: 0.001          # fusion head lr (param group 분리)
+  weight_decay: 0.01
+  grad_clip: 1.0
+  amp: false              # 단일 GPU 메모리 부족 시 true (NFR1)
+  monitor: f1
+  monitor_mode: max
+  early_stopping_patience: 3

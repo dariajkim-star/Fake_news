@@ -12,7 +12,7 @@ venv/
 .mypy_cache/
 
 # Data / checkpoints / experiment outputs (large artifacts stay local)
-data/
+/data/
 checkpoints/
 outputs/
 !outputs/.gitkeep

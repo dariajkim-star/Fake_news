@@ -2,6 +2,14 @@
 
 Object-Level Multimodal Financial Misinformation Detection — 이미지 속 시각적 증거(visual entity)와 기사 텍스트의 주장(textual entity)을 객체 단위로 대조하여 금융 가짜뉴스를 탐지하는 시스템의 상세 설계 문서.
 
+> **목표 아키텍처 문서**다. 현재 구현된 범위(Epic 1 — ResNet+BERT late fusion baseline과 공용 Trainer/Config/Evaluation)와 계획 범위의 구분, 실제 디렉토리 구조·모듈 교체 계약은 **`docs/bmad/architecture.md`**(Source Tree / Components / Architecture Contracts)를 정본으로 본다.
+
+### Change Log
+
+| Date | Version | Description | Author |
+|---|---|---|---|
+| 2026-08-10 | 1.1 | 텍스트 backbone을 영어 주 실험(`bert-base-uncased`/DeBERTa) + KLUE-BERT 한국어 데모 전용으로 정정, Epic 2 진입 시 이미지 인코더 `proj_dim: 768` 요구 명시, 구현 정본 문서 포인터 추가 | Winston (Architect) |
+
 ---
 
 ## 1. 시스템 전체 아키텍처
@@ -121,12 +129,14 @@ flowchart TB
 - 각 crop을 CLIP image encoder(ViT-B/32)에 통과 → region feature `f_r ∈ R^512`
 - 전체 이미지 global feature 1개를 별도 토큰으로 추가 → `V ∈ R^{(R+1)×512}`
 - Linear projection으로 fusion 공통 차원 `d=768`로 사상: `V' ∈ R^{(R+1)×768}`
+- ⚠️ **Epic 1 구현과의 정합**: `src/fusion/encoders.py`의 `ImageEncoder`는 기본 `proj_dim=None`이라 ResNet-50 pooled feature를 **2048-dim 그대로** 내보낸다(late fusion concat 768+2048=2816 전제). Epic 2에서 이 인코더를 region/global feature 추출에 재사용한다면 config에 **`model.image.proj_dim: 768`을 명시**해야 위 `d=768` 전제가 유지된다.
 
 ### 2.2 Text Branch
 
-#### 2.2.1 KLUE-BERT NER
+#### 2.2.1 NER (BERT 계열)
 
-- Backbone: `klue/bert-base` fine-tuning, BIO tagging head
+- Backbone (주 실험, 영어): `bert-base-uncased` fine-tuning, BIO tagging head. 주 데이터셋 Fakeddit이 영어이므로 영어 backbone이 기준이며 여유 시 DeBERTa를 비교한다.
+- Backbone (한국어 데모 전용): `klue/bert-base` — 자체 한국어 금융 데모/평가 셋에만 사용. hidden dim이 동일하게 768이라 아래 텐서 흐름은 그대로 성립한다.
 - Entity 유형: `PERSON, ORG, PRODUCT, LOCATION, DATE, MONEY`
 - 입력: 기사 제목 + 본문, max length `L = 256` (WordPiece)
 - 평가지표: entity-level F1
@@ -171,7 +181,7 @@ flowchart TB
 }
 ```
 
-- entity `embedding`은 해당 span token들의 KLUE-BERT last hidden state mean pooling
+- entity `embedding`은 해당 span token들의 텍스트 backbone last hidden state mean pooling
 - Token Encoder 출력: `T ∈ R^{L×768}` (fusion 입력)
 
 ### 2.3 Cross-modal Matching (Entity Alignment)
@@ -258,7 +268,7 @@ sequenceDiagram
     participant P as Inference Pipeline
     participant Y as YOLOv8 Detector
     participant V as Visual Entity Recognizer
-    participant B as KLUE-BERT (NER/RE)
+    participant B as Text BERT (NER/RE)
     participant M as Cross-modal Matcher
     participant F as Fusion Classifier
 
@@ -329,7 +339,7 @@ sequenceDiagram
 | CLIP region feature | `f_r` | `[R+1, 512]` | +1 = global image |
 | Region projection | `V'` | `[R+1, 768]` | Linear(512→768) |
 | 텍스트 토큰 | `input_ids` | `[L]` | L = 256 |
-| KLUE-BERT hidden | `T` | `[L, 768]` | last hidden state |
+| BERT hidden | `T` | `[L, 768]` | last hidden state (en: bert-base-uncased / ko demo: klue/bert-base — 둘 다 768) |
 | Entity embedding | — | `[768]` / `[512]` | text span pool / CLIP |
 | Cross-attention 출력 | `h_t2v`, `h_v2t` | `[768]` each | 2-layer, 8-head, pooled |
 | Consistency vector | `c` → `c'` | `[11]` → `[64]` | Linear(11→64) |
@@ -349,7 +359,8 @@ sequenceDiagram
 | 모듈 | 데이터 | 목표/지표 |
 |---|---|---|
 | YOLOv8 detector | 6-class 커스텀 annotation (뉴스 이미지) | mAP@50 |
-| KLUE-BERT NER | KLUE NER + 금융 도메인 추가 annotation | entity F1 |
+| NER (en: bert-base-uncased/DeBERTa) | 영어 NER 데이터 + 금융 도메인 추가 annotation | entity F1 |
+| NER (ko demo: KLUE-BERT) | KLUE NER + 자체 한국어 금융 annotation | entity F1 (데모 전용) |
 | Relation/Event head | 금융 relation annotation | relation F1 |
 | CLIP zero-shot / Face / OCR | pretrained 사용 (fine-tuning 없음, 후보군·DB만 구축) | top-1 acc (검증셋) |
 
@@ -357,7 +368,7 @@ sequenceDiagram
 
 - 데이터: Fakeddit (Phase 1 baseline) → 금융 도메인 셋으로 확장
 - Frozen: YOLOv8, OCR, Face — 학습 대상: projection layers, cross-attention, consistency Linear, MLP head
-- 후반 epoch에서 KLUE-BERT 상위 layer + CLIP projection unfreeze (lower LR, 예: backbone 1e-5, head 1e-4)
+- 후반 epoch에서 텍스트 backbone 상위 layer + CLIP projection unfreeze (lower LR, 예: backbone 1e-5, head 1e-4)
 - Phase별 점진 개발: (P1) ResNet+BERT late fusion → (P2) +YOLO region cross-attention → (P3) +NER → (P4) +entity consistency
 - 핵심 실험: ablation table (BERT only / image only / BERT+image / +object detection / +entity consistency)로 object-level 증거와 entity 불일치 feature의 F1 기여를 입증
 
