@@ -9,9 +9,64 @@
 
 ## 1. 문제 정의
 
-### 1.1 우리가 잡으려는 것
+### 1.1 출발점 — 기술이 아니라 실제 피해 사례
 
-용어를 먼저 정확히 못 박는다. 이 구분이 프로젝트 범위 전체를 결정한다.
+이 프로젝트는 "딥페이크가 위험할 것 같다"는 직감에서 출발하지 않는다.
+**크롤링으로 실제 피해 사례를 먼저 확보하고, 그 피해가 왜 발생했는지를 기술적으로 분해**해서 문제를 정의한다.
+
+수집 채널: 언론 discovery(Google News·NAVER) + 감독기관 사실확인(KRX·금융위·금감원·SEC·FINRA·CFTC·FCA) — [README_CRAWLERS.md](README_CRAWLERS.md) 참조.
+이 작업은 48시간 시계 **밖**(D-1 이전)에 완료한다.
+
+수집된 사건은 다음 구조로 코딩한다.
+
+| 사건 | 허위정보 형태 | 투자자가 믿은 것 | 행동 | 피해 |
+|---|---|---|---|---|
+| Case A | CEO deepfake | CEO의 실제 투자권유 | 송금 | 금전손실 |
+| Case B | 유명인 deepfake | 검증된 투자상품 | 가입/송금 | 투자금 손실 |
+| Case C | 조작 기업발표 | 기업의 실제 발표 | 주식 매수 | 가격 하락 손실 |
+| Case D | AI 영상 + 가짜 사이트 | 공식 금융서비스 | 자금이체 | 사기피해 |
+
+여기서 공통 pain point 두 개가 나온다.
+
+```
+Pain Point ①  누가 실제로 말했는지 검증하기 어렵다   → Media Authenticity 문제
+Pain Point ②  발언 내용이 사실인지 판단하기 어렵다   → Financial Claim Verification 문제
+```
+
+**문제정의 문장:**
+
+> 딥페이크를 활용한 투자사기와 허위 금융정보 유포로, 투자자는 온라인 영상에서
+> **실제 인물이 실제로 발언한 것인지**와 **발언 내용이 사실에 근거하는지**를
+> 동시에 확인해야 하는 부담을 지게 된다. 본 프로젝트는 실제 피해 사례 분석에서
+> 이 문제를 ① 영상 진위 판별과 ② 금융 주장 사실검증의 두 기술 문제로 정의하고,
+> Object Detection 기반 Deepfake Detection과 NLP 기반 Financial Claim Verification을
+> 결합한 투자정보 검증 PoC를 구현한다.
+
+즉 문제는 "deepfake 영상을 탐지한다"가 아니라
+**"투자자의 판단 이전에 영상의 진위와 금융 주장 신뢰도를 동시에 확인할 수단이 부족하다"**이다.
+
+> 📝 크롤링 완료 후 이 절의 일반론을 실측치로 치환한다 (숫자 없이 주장만 쓰는 것을 막는 템플릿):
+> `수집 사례 N건 중 X%가 유명인/CEO 사칭, Y%가 투자금 송금 유도, 확인된 피해액 합계 Z` — **채우기 전까지 발표자료에 쓰지 않는다.**
+
+**전체 논리 연결 (발표 한 장):**
+
+```
+[크롤링] 실제 금융 deepfake 피해 사례
+    ↓
+[Pain Point] ① 실제 발언인지 알기 어렵다  ② 발언이 사실인지 알기 어렵다
+    ↓
+[기술 문제] ① Media Authenticity Detection  ② Financial Claim Verification
+    ↓
+[모델] YOLO + EfficientNet  /  Whisper + DeBERTa
+    ↓
+[산출물] Deepfake Probability + Claim Verification Result (분리 제시)
+    ↓
+[검증] H1: Face ROI가 탐지를 개선하는가?  H2: Evidence가 검증을 개선하는가?
+```
+
+### 1.2 용어 — 우리가 잡으려는 것
+
+용어를 정확히 못 박는다. 이 구분이 프로젝트 범위 전체를 결정한다.
 
 | 개념 | 의미 | AI 조작 필수 |
 |---|---|:--:|
@@ -30,7 +85,7 @@
 영상은 AI 합성이고, 발언 내용도 사실이 아니다. 주가는 이미 움직인다.
 이건 가상의 위협이 아니라 FINRA와 SEC가 투자자·기업에 실제로 경고한 사기 유형이다.
 
-### 1.2 왜 두 판정을 분리하는가
+### 1.3 왜 두 판정을 분리하는가
 
 시스템은 두 질문에 **따로** 답한다.
 
@@ -43,19 +98,21 @@ Q2. 영상 속 금융 주장은 신뢰할 만한가?      → Claim Credibility
 두 신호를 하나의 "Fake News Probability"로 뭉개면 정보가 사라지고, 무엇보다 그렇게 학습시킬 근거가 없다
 (→ §8.3). 대신 두 축을 그대로 보여주고 조합만 해석한다.
 
-### 1.3 핵심 연구 질문
+### 1.4 가설과 연구 질문
 
-| RQ | 질문 | 평가 방식 |
+두 기술 문제 각각에 검증 가능한 가설을 하나씩 건다.
+
+| # | 가설/질문 | 평가 방식 |
 |---|---|---|
-| **RQ1** | 얼굴 ROI를 Object Detection으로 추출하면 full-frame 대비 deepfake 탐지가 개선되는가? | 정량 (paired AUROC) |
-| **RQ1-b** | ROI를 얼마나 넓게 잘라야 하는가 — 배경 문맥은 도움인가 방해인가? | 정량 (paired AUROC) |
-| **RQ2** | 금융 claim 분류에서 **증거 없이 claim만** 보고도 맞힐 수 있는가? 맞힌다면 그건 무엇을 학습한 것인가? | 정량 (Macro-F1 격차) |
+| **H1** | 투자 영상에서 얼굴 영역을 Object Detection으로 추출하면 full-frame 대비 deepfake 탐지 성능이 개선된다 | 정량 (V0 vs V1, paired ΔAUROC) |
+| **H1-b** | ROI margin — 배경 문맥은 도움인가 방해인가? | 정량 (V1 vs V2, paired ΔAUROC) |
+| **H2** | claim만 사용하는 것보다 evidence를 함께 사용하면 금융 claim 검증 성능이 개선된다 | 정량 (N1 vs N2, Macro-F1) |
 | **RQ3** | 조작 여부와 주장 신뢰도를 분리 제시하는 것이 단일 라벨보다 설명 가능한 위험 신호를 주는가? | 정성 (사례 분석) |
 
-**RQ1은 정직하게 말해 "확인"에 가깝다.** 얼굴 crop이 유리하다는 건 forensics에서 널리 쓰이는 전제다.
-그래서 RQ1-b를 붙였다. crop margin의 최적점은 실제로 알려져 있지 않고, 학습 한 번이면 답이 나온다.
+**H1은 정직하게 말해 "확인"에 가깝다.** 얼굴 crop이 유리하다는 건 forensics에서 널리 쓰이는 전제다.
+그래서 H1-b를 붙였다. crop margin의 최적점은 실제로 알려져 있지 않고, 학습 한 번이면 답이 나온다.
 
-**RQ2는 이 프로젝트에서 가장 흥미로운 질문이다.** 자세한 건 §7.2.
+**H2가 NLP 축의 메인 검증이다.** 부수 질문 — claim만 보고도 맞힌다면 그건 무엇을 학습한 것인가 — 를 포함해 자세한 설계와 전제조건은 §7.2.
 
 ---
 
@@ -92,6 +149,11 @@ Q2. 영상 속 금융 주장은 신뢰할 만한가?      → Claim Credibility
 
 **딥러닝 사용 지점 4곳**: Object Detection(YOLO) · 이미지 분류(EfficientNet) · 음성인식(Whisper) · **NLP 텍스트 분류(DeBERTa)**.
 이 중 NLP는 선택이 아니라 필수 축이며, 실제로 fine-tuning하고 별도 ablation으로 평가한다.
+
+각 모듈의 역할을 정확히 정의한다. 과장하지 않는 것이 이 프로젝트의 원칙이다.
+
+- **Object Detection**: 전체 화면이 아니라 **발언자의 얼굴 영역을 식별해 forensic analysis 대상으로 제한**한다.
+- **NLP**: "가짜뉴스를 맞히는" 모델이 아니다. **금융 claim과 evidence 간의 entailment/contradiction을 판별**한다.
 
 ---
 
@@ -161,6 +223,21 @@ models/
 }
 ```
 
+**투자자 관점 표시 예** — 산출물은 "이 영상은 가짜다" 한 줄이 아니라, pain point ①②에 대응하는 두 개의 evidence다:
+
+```
+영상 분석 결과
+─────────────────────────────
+발언자 영상          Deepfake probability  92%   ⚠ AI 조작 가능성 높음
+
+추출된 주장          "NVIDIA reported a 40% decline in quarterly revenue."
+근거 검증            REFUTED (confidence 87%)
+─────────────────────────────
+Investment Information Risk
+  Media Authenticity : HIGH RISK
+  Claim Reliability  : HIGH RISK
+```
+
 ### 4.3 결과 파일
 
 ```
@@ -228,10 +305,11 @@ ds = load_dataset("amanrangapur/Fin-Fact")
 
 **사용 컬럼**: `Claim`, `Claim Label`, `Evidence`, `Justification`
 
-Evidence는 옵션이 아니라 **RQ2의 핵심 변수**다 (§7.2).
+Evidence는 옵션이 아니라 **H2의 핵심 변수**다 (§7.2).
 
-> ⚠️ Day 2 첫 작업: 라벨 분포와 클래스별 표본 수 확인.
-> 최소 클래스가 50 미만이면 Macro-F1이 불안정해지므로 클래스 병합 여부를 그 자리에서 결정한다.
+> ⚠️ Day 2 첫 작업 두 가지: ① 라벨 분포와 클래스별 표본 수 확인 —
+> 최소 클래스가 50 미만이면 Macro-F1이 불안정해지므로 클래스 병합 여부를 그 자리에서 결정.
+> ② **evidence 토큰 길이 분포 측정** (§7.2 전제 게이트).
 
 ### 5.3 얼굴 검출기 — pretrained, 학습 안 함
 
@@ -328,7 +406,7 @@ Manual Spot Check      = 무작위 50 프레임의 bbox를 눈으로 검수, 오
 
 ## 7. Ablation — 무엇을 왜 비교하는가
 
-### 7.1 Vision: RQ1 / RQ1-b
+### 7.1 Vision: H1 / H1-b
 
 ```
 V0  Full Frame ──────────────────► EfficientNet ──► P(fake)
@@ -340,10 +418,18 @@ V2  Frame ─► YOLO ─► 1.3× crop ───► EfficientNet ──► P(fa
 **V2 − V1**은 실제로 답이 알려지지 않은 질문이다 — 조작 흔적은 얼굴 경계(턱선·헤어라인)에 몰려 있어
 margin이 도움이 될 수도 있고, 배경 노이즈가 들어와 해로울 수도 있다. 학습 한 번 값으로 답이 나온다.
 
-### 7.2 NLP: RQ2 — 이 프로젝트에서 가장 중요한 ablation
+### 7.2 NLP: H2 — 이 프로젝트에서 가장 중요한 ablation
 
-순진한 설계는 이렇다: `Claim → DeBERTa → Label`.
-이게 잘 동작하면 기분은 좋은데, **무엇을 학습한 건지 설명할 수 없다.**
+H2가 검증하는 것: **evidence를 함께 사용하면 금융 claim 검증 성능이 개선되는가 (N2 − N1).**
+
+> ⚠️ **전제 게이트 (Day 2 첫 작업, 필수)**: H2가 메인 검증으로 승격되었으므로
+> Fin-Fact **evidence 필드의 토큰 길이 분포를 학습 전에 반드시 측정**한다.
+> evidence가 max_length(512)를 크게 초과하면 N2는 "evidence를 본 모델"이 아니라
+> "evidence 앞조각을 본 모델"이 되어 아래 해석표가 오염된다. 초과 시 처리 방식
+> (선두 절단 명시 / 관련 문장 추출)을 **학습 전에** 결정하고 기록한다.
+
+왜 claim-only가 순진한 설계인가: `Claim → DeBERTa → Label`이 잘 동작해도
+**무엇을 학습한 건지 설명할 수 없다.**
 
 생각해보면 명백하다. "Apple이 Tesla를 3천억 달러에 인수한다"가 참인지 거짓인지,
 **증거 없이 문장만 보고 알 방법은 없다.** 그런데도 모델이 맞힌다면 그건 사실 검증이 아니라
@@ -501,6 +587,11 @@ findeepfake-48h/
 
 ## 11. 48시간 일정
 
+### D-1 이전 — pain-point 크롤링 (48시간 시계 밖)
+
+- [ ] 크롤러 실행 → 사례 수집 ([README_CRAWLERS.md](README_CRAWLERS.md))
+- [ ] 사건 코딩 표 + Pain Point Map 작성 → §1.1 실측치 템플릿 채우기
+
 ### D-1 (전날 밤, 30~60분) — 이걸 안 하면 이틀이 이틀이 아니다
 
 - [ ] Kaggle 계정 + DFDC 대회 규약 동의 (승인 지연 가능)
@@ -534,7 +625,7 @@ findeepfake-48h/
 **버퍼 없음이 이 일정의 유일한 약점이다.** 지연 시 포기 순서를 미리 정해둔다:
 
 ```
-1순위 포기: V2 (margin ablation)  → RQ1-b 철회
+1순위 포기: V2 (margin ablation)  → H1-b 철회
 2순위 포기: N0 (DistilBERT)       → NLP baseline 비교 철회, N1 vs N2는 유지
 3순위 포기: Streamlit 데모        → CLI 출력 + 스크린샷으로 대체
 절대 포기 불가: family split · video-level 평가 · bootstrap CI · N1 vs N2
