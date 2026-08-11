@@ -13,12 +13,25 @@ venv/
 
 # Data / checkpoints / experiment outputs (large artifacts stay local)
 # git은 제외된 디렉토리 안으로 내려가지 않으므로, 경로를 단계별로 열어야 예외가 동작한다.
+# 원칙: data/ 안에서 git에 남기는 것은 (a) 문제정의 산출물 3개, (b) 디렉토리 구조용 .gitkeep 뿐.
 /data/*
+
+# (a) 문제정의 산출물 — 가볍고 재현성에 필요하다 (§1.1).
 !/data/research/
 /data/research/*
 !/data/research/coded_cases.csv
 !/data/research/painpoint_summary.md
 !/data/research/source_manifest.csv
+#     크롤링 raw 원문은 용량·저작권 문제로 제외하고 구조만 남긴다.
+!/data/research/crawled/
+/data/research/crawled/*
+!/data/research/crawled/.gitkeep
+
+# (b) 학습 데이터는 전량 제외하되, 클론 직후 구조가 재현되도록 .gitkeep만 통과시킨다.
+!/data/model/
+/data/model/**
+!/data/model/**/
+!/data/model/**/.gitkeep
 # raw 기사 원문은 용량·저작권 문제로 커밋하지 않는다 (재현은 크롤러 재실행으로).
 fake_news_painpoint_crawlers/output/
 checkpoints/
