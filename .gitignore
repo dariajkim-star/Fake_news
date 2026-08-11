@@ -12,7 +12,15 @@ venv/
 .mypy_cache/
 
 # Data / checkpoints / experiment outputs (large artifacts stay local)
-/data/
+# git은 제외된 디렉토리 안으로 내려가지 않으므로, 경로를 단계별로 열어야 예외가 동작한다.
+/data/*
+!/data/research/
+/data/research/*
+!/data/research/coded_cases.csv
+!/data/research/painpoint_summary.md
+!/data/research/source_manifest.csv
+# raw 기사 원문은 용량·저작권 문제로 커밋하지 않는다 (재현은 크롤러 재실행으로).
+fake_news_painpoint_crawlers/output/
 checkpoints/
 outputs/
 !outputs/.gitkeep
