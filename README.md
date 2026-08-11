@@ -240,6 +240,16 @@ Q2. 영상 속 금융 주장은 제공된 근거에 의해 지지되는가? → 
 
 ## 2. 시스템 구조
 
+![FinDeepfake-48h 아키텍처 — 학습 뷰와 추론 뷰](docs/diagrams/architecture.svg)
+
+**학습(위)**: 데이터셋 하나가 모델 하나만 가르친다. 세 기둥은 독립이고 기둥마다 가설이 하나씩
+붙는다(H3·H1·H2). 유일한 연결은 ROI transfer — OpenForensics에서 학습한 YOLO가 DFDC 프레임의
+얼굴을 잘라 EfficientNet의 입력을 만든다.
+**추론(아래)**: 입력 하나가 두 축으로 갈라져 REAL/FAKE와 SUPPORTED/REFUTED를 따로 내고,
+점수를 합치지 않고 Risk Matrix 2×2로 해석만 조합한다. Provided Evidence는 외부 입력이다(§2.1).
+
+<details><summary>텍스트 버전 (스크린리더·diff용)</summary>
+
 ```
                          INPUT VIDEO
                               │
@@ -271,6 +281,8 @@ Q2. 영상 속 금융 주장은 제공된 근거에 의해 지지되는가? → 
                               │
                       RISK MATRIX (§8.3)
 ```
+
+</details>
 
 **Evidence는 영상에서 자동으로 생기지 않는다.** Whisper가 만드는 것은 transcript → claim까지다.
 evidence는 **별도로 제공되어야 하며**(PoC에서는 Fin-Fact가 제공, 실서비스에서는 retrieval 단계가 필요),
