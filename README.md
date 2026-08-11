@@ -777,15 +777,28 @@ findeepfake-48h/
 우선순위는 **프로젝트 논리 > 환경 정비**다. CUDA가 막히면 Colab이라는 우회가 있지만,
 문제정의 근거가 비면 "왜 이 모델을 만들었습니까?"에 답할 방법이 없다.
 
-| 순위 | 항목 | 왜 이 순위인가 |
-|---|---|---|
-| **P0-A** | **사건 코딩 완료** (§1.1.1) | 48시간 일정표에 이 작업 슬롯은 **0분**이다. 오늘이 마지막 기회 |
-| **P0-B** | Kaggle 규약 동의 + DFDC 다운로드 착수 | Day 1의 6개 슬롯 전부가 여기 매달림. 오너만 할 수 있음 |
-| **P0-C** | 학습환경 확인 — `torch.cuda.is_available()` | 현재 `torch+cpu` 빌드라 **False**. CUDA 휠 재설치 필요(대용량) |
-| P1 | `ffmpeg` 설치 확인 | Day 2 후반(STT·pipeline·데모) 블로커. 15분 |
-| P1 | `requirements.txt` 재작성 후 설치 | 현재 파일은 Legacy FinFact 기준이라 그대로 쓰면 안 됨 |
-| P1 | Whisper·YOLOv8n-Face 가중치 사전 다운로드 | whisper 구현체 확정 후 |
-| P2 | Legacy FinFact 자산 정리 | **블로커 아님.** 신규 `src/`는 새로 만들면 되고, 이틀짜리에서 파일 이동하다 conflict 내면 손해. `git tag legacy-finfact-final` 찍어두고 **정리는 마지막에** |
+| 순위 | 항목 | 상태 | 비고 |
+|---|---|---|---|
+| **P0-A** | **사건 코딩 완료** (§1.1.1) | ✅ | 15건 코딩 완료. 48시간 일정표에 이 작업 슬롯은 **0분**이라 시계 시작 전에 끝내야 했다 |
+| **P0-B** | Kaggle 규약 동의 + DFDC 다운로드 착수 | ⬜ | **Day 1의 6개 슬롯 전부가 여기 매달림. 오너만 할 수 있다** |
+| **P0-C** | 학습환경 — `torch.cuda.is_available()` | ✅ | `torch 2.12.1+cu126` / GTX 1650 (compute 7.5, 4.29GB) / AMP fp16 동작 확인 |
+| P1 | `ffmpeg` 설치 | ✅ | 9.0 (winget `Gyan.FFmpeg`) |
+| P1 | `requirements.txt` 재작성 | ✅ | FinDeepfake 기준으로 전면 교체. **torch는 의도적으로 제외** — CPU 빌드가 깔리면 학습이 통째로 막힌다 |
+| P1 | Whisper·YOLOv8n-Face 가중치 사전 다운로드 | ⬜ | whisper 구현체 확정 후 (오너 미결) |
+| P2 | Legacy FinFact 자산 정리 | ⬜ | **블로커 아님.** 신규 `src/`는 새로 만들면 되고, 이틀짜리에서 파일 이동하다 conflict 내면 손해. `git tag legacy-finfact-final` 찍어두고 **정리는 마지막에** |
+
+**환경 설치 명령** (재현용):
+
+```bash
+pip install --index-url https://download.pytorch.org/whl/cu126 torch torchvision
+```
+
+```bash
+pip install -r requirements.txt
+```
+
+`torch`를 `requirements.txt`에 넣지 않은 이유는 일반 PyPI에서 설치하면 **CPU 빌드가 조용히 깔리기 때문**이다.
+실제로 이 리포에서 한 번 발생했고, `torch.cuda.is_available()`이 `False`인 채로 Day 1을 시작할 뻔했다.
 
 ### DAY 1
 
