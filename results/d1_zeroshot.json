@@ -1,0 +1,8 @@
+{
+  "model": "yolov8n-face-lindevs (pretrained, zero-shot)",
+  "eval": "OpenForensics Val 7308",
+  "mAP50": 0.9669,
+  "mAP50_95": 0.5588,
+  "precision": 0.908,
+  "recall": 0.9817
+}
