@@ -226,8 +226,9 @@ Q2. 영상 속 금융 주장은 제공된 근거에 의해 지지되는가? → 
 | # | 가설/질문 | 평가 방식 |
 |---|---|---|
 | **H1** | 투자 영상에서 얼굴 영역을 Object Detection으로 추출하면 full-frame 대비 deepfake 탐지 성능이 개선된다 | 정량 (V0 vs V1, paired ΔAUROC) |
-| **H1-b** | ROI margin — 배경 문맥은 도움인가 방해인가? | 정량 (V1 vs V2, paired ΔAUROC) |
+| **H3** | deepfake 도메인 데이터(OpenForensics)로 face detector를 fine-tuning하면 pretrained 대비 검출 성능이 개선된다 | 정량 (D1 vs D2, ΔmAP@50) |
 | **H2** | claim만 사용하는 것보다 evidence를 함께 사용하면 금융 claim 검증 성능이 개선된다 | 정량 (N1 vs N2, Macro-F1) |
+| ~~H1-b~~ | ~~ROI margin — 배경 문맥은 도움인가 방해인가?~~ | **철회** — GPU 슬롯을 H3(D2 학습)에 배정 (§6.4) |
 | **RQ3** | 조작 여부와 주장 근거 검증 결과를 분리 제시하는 것이 단일 라벨보다 설명 가능한 위험 신호를 주는가? | 정성 (사례 분석) |
 
 **H1은 정직하게 말해 "확인"에 가깝다.** 얼굴 crop이 유리하다는 건 forensics에서 널리 쓰이는 전제다.
@@ -274,8 +275,9 @@ Q2. 영상 속 금융 주장은 제공된 근거에 의해 지지되는가? → 
 각 모듈의 역할을 정확히 정의한다. 과장하지 않는 것이 이 프로젝트의 원칙이다.
 
 - **Object Detection**: 전체 화면이 아니라 **발언자의 얼굴 영역을 식별해 forensic analysis 대상으로 제한**한다.
-  학습하지 않는다 — pretrained detector로 **forensic ROI를 공급하는 perception module**이며, 검증 대상은
-  detector 자체의 성능이 아니라 **ROI selection이 downstream deepfake 분류에 미치는 효과**다.
+  **OpenForensics의 GT bbox로 직접 fine-tuning하며(§5.3), mAP@50으로 정식 평가한다(D1 vs D2).**
+  클래스는 FACE 하나다 — YOLO는 "어디에 얼굴이 있는가", EfficientNet은 "그 얼굴이 진짜인가"로
+  역할을 나눠 의존 관계를 만든다. ROI selection이 downstream 분류에 미치는 효과는 V0 vs V1로 따로 검증한다.
 - **NLP**: "가짜뉴스를 맞히는" 모델이 아니다. **금융 claim과 evidence 간의 entailment/contradiction을 판별**한다.
 
 ### 2.1 Evidence는 어디서 오는가 — 이 PoC의 정확한 범위
@@ -564,13 +566,60 @@ ds = load_dataset("amanrangapur/Fin-Fact")
 
 Evidence는 옵션이 아니라 **H2의 핵심 변수**다 (§7.2).
 
-### 5.3 얼굴 검출기 — pretrained, 학습 안 함
+### 5.3 얼굴 검출기 — OpenForensics로 직접 fine-tuning한다 (설계 변경)
 
-- WIDER FACE 벤치마크: https://shuoyang1213.me/WIDERFACE/
-- pretrained 구현: https://github.com/lindevs/yolov8-face
+> **Decision — Object Detection 축 신설 (2026-08-11, 기존 결정 번복)**
+>
+> 초기 설계는 "bbox GT가 없으니 detector는 pretrained만 쓴다"였다. **이건 데이터 선택이 만든
+> 제약을 설계 원칙처럼 쓴 오류였다.** deepfake 도메인에 face-wise bbox GT가 이미 붙어 있는
+> 데이터셋(OpenForensics, ICCV 2021)이 존재하고, 접근성·포맷·학습 비용을 전부 실측 검증했다.
+> **YOLO를 직접 fine-tuning하고 mAP를 정식으로 계산한다.**
 
-**직접 학습하지 않는다.** 이 프로젝트에서 detector의 역할은 성능 경쟁이 아니라 **ROI 공급**이다.
-detector를 학습 대상으로 삼는 순간 bbox 라벨링이 필요해지고, 그건 이틀 예산을 초과한다.
+- pretrained 초기 가중치: https://github.com/lindevs/yolov8-face (WIDER FACE)
+- fine-tuning 데이터: **OpenForensics Validation split** (§5.6)
+
+**단, DFDC를 대체하지 않는다 — 축을 분리한다.** OpenForensics는 순수 이미지 데이터셋이라
+(§5.6) 한 이미지에 real face와 forged face가 섞여 있어 **full-frame 라벨(V0)이 정의되지 않고**,
+`original` 파생관계가 없어 family split·video-level 평가도 성립하지 않는다. 교체하면 H1이 통째로
+증발한다. 그래서:
+
+```
+축 ①-a  Deepfake 분류    DFDC part_02 (영상)          V0 vs V1 · family split · video-level   [불변]
+축 ①-b  Face Detection   OpenForensics Val (이미지)    YOLOv8n fine-tuning · mAP@50 · D1 vs D2  [신설]
+축 ②    Claim 검증       Fin-Fact                      N1 vs N2                                 [불변]
+```
+
+이로써 **세 모델(YOLO · EfficientNet · DeBERTa)을 전부 직접 학습한다.**
+
+### 5.6 OpenForensics — Face Detection 학습 데이터 (신설)
+
+**출처**: Zenodo record 5528418 (DOI `10.5281/zenodo.5528418`) — **승인·계정 불필요 (open access)**
+- 논문: *OpenForensics: Large-Scale Challenging Dataset for Multi-Face Forgery Detection and Segmentation* (ICCV 2021)
+- 전체 115,325 이미지 / 334,136 얼굴, face별 **bbox + real/forged 라벨 + segmentation polygon** (표준 COCO JSON)
+
+**Val split만 받는다** (실측 근거):
+
+| 항목 | 값 |
+|---|---|
+| 취득 파일 | `Val.zip`(3.12GB) + `Val_poly.json`(0.12GB) — **Val은 단일 zip으로 자기완결** |
+| 규모 | 7,308 이미지 / 15,345 얼굴 (Real 4,782 / Fake 10,563 = 1:2.21) |
+| 해상도 | 최대 1024×1024, bbox 중앙값 한 변 ≈191px — YOLO 640 입력에 적정 |
+| 다운로드 | **Zenodo 서버가 0.79MB/s로 느리다** (병렬화해도 1.38MB/s). Val 3.24GB ≈ 40분 |
+| Train split | 19.9GB ≈ 4시간 다운로드 + 47분/epoch — **48시간 예산에서 기각** |
+| 어노테이션 | `category_id` 0=Real 1=Fake가 그대로 YOLO class id. 변환 15줄/0.07초, 좌표 이상치 0건 |
+
+**YOLOv8n fine-tuning 실측** (GTX 1650, 640², AMP): batch 16에서 peak **2.15GB** / Val 1 epoch **약 8분**
+→ 15 epoch ≈ 2.5~3시간. 4GB 카드에서 성립한다.
+
+> ⚠️ **identity 누수는 검증 불가다 — 검증했더니 없더라가 아니다.** 어노테이션에 source identity
+> 필드가 없어, 같은 인물·같은 촬영 세트가 분할을 가로지르는지 **확인할 방법 자체가 없다.**
+> DFDC에서 `original` 필드로 했던 leakage 검사를 여기서는 할 수 없으며, 이를 한계로 명시한다.
+> 자체 재분할 대신 **저자 공식 split 경계를 존중**하는 이유이기도 하다.
+
+> ⚠️ **라이선스 표기가 출처마다 다르다.** Zenodo API는 CC-BY-4.0, 프로젝트 페이지는 CC-BY-NC-SA-4.0,
+> GitHub는 "academic purpose only". **가장 제한적인 해석(비영리·학술, 재배포 금지)을 채택**한다.
+> 원본이 Google Open Images의 실존 인물 사진이므로, 얼굴 이미지 커밋 금지 규정(License 절)이
+> DFDC와 동일하게 적용된다.
 
 ### 5.4 Synthetic Integration Test Case — 시연용 fixture (학습·평가 데이터 아님)
 
@@ -655,39 +704,52 @@ seed는 42로 고정하고 `split_report.json`에 기록한다.
 **FAKE Recall을 반드시 별도 보고한다.** 금융 사기 스크리닝에서 놓친 deepfake의 비용이
 잘못 경보한 진짜 영상의 비용보다 훨씬 크다. 운영 임계값은 FAKE Recall 기준으로 잡는다.
 
-### 6.3 Object Detection 지표에 대한 정정
+### 6.3 Object Detection 지표 — 축별로 다르다
 
-**mAP@50은 이 프로젝트에서 계산할 수 없다.**
+**OpenForensics 축(①-b)에서는 mAP를 정식으로 계산한다.** GT bbox가 있기 때문이다.
 
-mAP는 GT bounding box가 있어야 계산된다. DFDC에는 얼굴 bbox 정답이 없다.
-WIDER FACE 벤치마크 수치를 인용하는 건 가능하지만, 그건 **우리 데이터에서의 성능이 아니다.**
+```
+Primary   : mAP@50 · mAP@50:95
+보조      : AP(Real) · AP(Fake) 클래스별, Precision, Recall
+표본 단위 : 이미지 (각 이미지가 독립 촬영본 — DFDC 프레임과 달리 비독립성 문제 없음)
+```
 
-대신 실제로 측정 가능한 두 가지를 보고한다.
+초기 설계는 "mAP는 계산할 수 없다"였다 — DFDC에 bbox GT가 없었기 때문이다. 그건 데이터의
+제약이었지 과제의 본질이 아니었고, OpenForensics 도입으로 이 빈칸이 메워졌다.
+
+**DFDC 축(①-a)에는 여전히 bbox GT가 없다.** 거기서는 기존 두 지표를 유지한다.
 
 ```
 Detection Success Rate = 얼굴 ROI를 정상 추출한 영상 수 / 전체 영상 수
 Manual Spot Check      = 무작위 50 프레임의 bbox를 눈으로 검수, 오검출·미검출 건수 기록
 ```
 
-이건 축소가 아니라 정정이다. **채울 수 없는 칸을 발표 자료에 넣는 것이 가장 큰 리스크다.**
+**채울 수 없는 칸을 발표 자료에 넣는 것이 가장 큰 리스크다**라는 원칙은 그대로다 — 바뀐 건
+"채울 수 있는 데이터를 찾아냈다"는 것이다.
 
 ### 6.4 최종 결과표 (이 표를 채우는 것이 프로젝트 완료 조건)
 
-**핵심 비교는 두 개다** — `V0 vs V1`(ROI가 도움이 되는가)과 `N1 vs N2`(evidence가 도움이 되는가).
-나머지 행(V2·N0)은 여유가 있을 때만 채우는 부가 실험이며, 없어도 두 가설의 검증은 완결된다.
+**핵심 비교는 세 개다** — `V0 vs V1`(ROI가 분류에 도움이 되는가), `D1 vs D2`(deepfake 도메인
+fine-tuning이 검출을 개선하는가), `N1 vs N2`(evidence가 검증에 도움이 되는가).
 
 | # | 모듈 | 구성 | 주 지표 | 값 | 95% CI | 우선순위 |
 |---|---|---|---|---|---|---|
-| V0 | Vision | Full frame → EfficientNet-B0 | AUROC | – | – | **필수** |
-| V1 | Vision | YOLO ROI (tight) → EfficientNet-B0 | AUROC | – | – | **필수** |
-| — | Vision | **V1 − V0 (paired)** ← H1 | ΔAUROC | – | – | **필수** |
+| V0 | Vision(분류) | Full frame → EfficientNet-B0 | AUROC | – | – | **필수** |
+| V1 | Vision(분류) | YOLO ROI (tight) → EfficientNet-B0 | AUROC | – | – | **필수** |
+| — | Vision(분류) | **V1 − V0 (paired)** ← H1 | ΔAUROC | – | – | **필수** |
+| D1 | Detection | YOLOv8n-Face pretrained, zero-shot (OpenForensics Val test부) | mAP@50 | – | – | **필수** |
+| D2 | Detection | YOLOv8n-Face **fine-tuned** (OpenForensics Val train부) | mAP@50 | – | – | **필수** |
+| — | Detection | **D2 − D1** ← H3 | ΔmAP@50 | – | – | **필수** |
 | N1 | NLP | DeBERTa-v3-small, claim only | Macro-F1 | – | bootstrap | **필수** |
 | N2 | NLP | DeBERTa-v3-small, claim + evidence | Macro-F1 | – | bootstrap | **필수** |
 | — | NLP | **N2 − N1** ← H2 | ΔMacro-F1 | – | bootstrap | **필수** |
-| D0 | Detection | YOLOv8n-Face | Success Rate | – | – | **필수** |
-| V2 | Vision | YOLO ROI (margin 1.3×) → EfficientNet-B0 | AUROC | – | – | 부가 (H1-b) |
-| — | Vision | V2 − V1 (paired) | ΔAUROC | – | – | 부가 (H1-b) |
+| D0 | Detection | DFDC 축 Detection Success Rate + 스팟체크 | Success Rate | – | – | **필수** |
+| V2 | Vision(분류) | YOLO ROI (margin 1.3×) → EfficientNet-B0 | AUROC | – | – | ❌ **사전 포기 확정** (아래) |
 | N0 | NLP | DistilBERT, claim only | Macro-F1 | – | bootstrap | 부가 |
+
+> **V2는 "지연 시 포기"가 아니라 지금 포기를 확정한다.** GPU가 한 장인데 D2(YOLO fine-tuning
+> 약 3시간)가 새로 들어왔다. Day 1 학습 슬롯에서 V0·V1·D2를 돌리면 V2 자리가 없다.
+> §11의 포기 순서 1순위를 사전 발동하는 것이며, H1-b는 철회한다.
 
 ---
 
@@ -702,8 +764,30 @@ V2  Frame ─► YOLO ─► 1.3× crop ───► EfficientNet ──► P(fa
 ```
 
 **V1 − V0**이 Object Detection을 파이프라인에 넣은 이유를 정량적으로 설명한다.
-**V2 − V1**은 실제로 답이 알려지지 않은 질문이다 — 조작 흔적은 얼굴 경계(턱선·헤어라인)에 몰려 있어
-margin이 도움이 될 수도 있고, 배경 노이즈가 들어와 해로울 수도 있다. 학습 한 번 값으로 답이 나온다.
+**V2 − V1**(margin ablation)은 GPU 슬롯을 D2에 내주면서 **사전 포기를 확정**했다 (§6.4). H1-b 철회.
+
+### 7.1.1 Detection: H3 — YOLO를 직접 학습한다 (신설)
+
+H3가 검증하는 것: **deepfake 도메인 데이터로 face detector를 fine-tuning하면,
+일반 얼굴 데이터(WIDER FACE)로 학습된 pretrained detector 대비 검출 성능이 개선되는가 (D2 − D1).**
+
+```
+D1  YOLOv8n-Face (WIDER FACE pretrained)  ── zero-shot ──►  OpenForensics Val test부  →  mAP@50
+D2  YOLOv8n-Face + OpenForensics fine-tune ─────────────►  동일 test부              →  mAP@50
+```
+
+**클래스는 FACE 하나로 통일한다** (Real/Fake bbox를 모두 class 0으로 변환). 이유:
+
+- **역할이 겹치면 안 된다.** YOLO가 Real/Fake 2-class로 검출하면 EfficientNet(분류 축)과 같은 문제를
+  두 모델이 풀게 되어 "왜 둘 다 있는가"에 답이 없어진다. YOLO는 **어디에 얼굴이 있는가**,
+  EfficientNet은 **그 얼굴이 진짜인가**로 의존 관계를 만든다.
+- **D1과의 비교가 공정해진다.** pretrained detector는 FACE 단일 클래스라, 2-class로 학습하면
+  D1 vs D2가 같은 과제의 비교가 아니게 된다.
+- 단, GT의 real/forged 라벨은 버리지 않는다 — **forged face에 대한 recall을 따로 보고**해
+  "fine-tuning이 특히 합성 얼굴 검출을 개선하는가"를 본다. 이건 2-class 학습 없이도 계산된다.
+
+fine-tuning은 Val 7,308장을 저자 공식 경계 안에서 train/test부로 다시 나눠 쓴다
+(Train split 19.9GB는 다운로드 4시간이라 기각 — §5.6).
 
 ### 7.2 NLP: H2 — 이 프로젝트에서 가장 중요한 ablation
 
@@ -873,12 +957,13 @@ model(batch: dict) -> logits  # [B, num_classes]
   절대적 진실 판별기가 아니라, **주어진 claim과 evidence의 관계를 Fin-Fact 라벨 체계 안에서 판정하는 모델**이다.
 - **DFDC sample에서의 성능이 실제 금융 deepfake에 이전된다고 주장하지 않는다.**
   DFDC는 금융 도메인 데이터가 아니다. 도메인 이전은 검증되지 않았고, 이를 한계로 명시한다.
-- **"YOLO를 학습해 Object Detection 모델을 개발했다"고 말하지 않는다.** pretrained detector를 그대로 쓴다.
-  정확한 표현은 이것이다 — **"pretrained Object Detector로 forensic ROI를 추출하고, ROI selection이
-  downstream deepfake detection에 미치는 효과를 검증했다."** 이 프로젝트의 학습 핵심은 Deepfake
-  Classification과 NLP이고, Object Detection은 그 앞단의 perception module이다.
-  (과제 요건이 detector 자체 학습을 요구한다면 WIDER FACE subset fine-tuning을 추가해야 하며,
-  현재 설계는 그 요구가 없다는 전제 위에 있다.)
+- ~~"YOLO를 학습하지 않는다"~~ → **이제 학습한다** (§5.3 설계 변경). 정확한 표현:
+  **"OpenForensics의 GT bounding-box annotation으로 YOLOv8n-Face를 fine-tuning하고
+  mAP@50으로 정식 평가했으며(D1 vs D2), 검출된 얼굴 ROI가 downstream deepfake 분류에 미치는
+  효과를 별도로 검증했다(V0 vs V1)."** — bbox를 직접 그렸다고는 말하지 않는다. GT는 데이터셋이 제공한다.
+- **detector의 도메인 이전도 주장하지 않는다.** OpenForensics는 이미지 기반 GAN face-swap이고
+  DFDC는 영상이다. OpenForensics에서 학습한 detector를 DFDC crop 생성에 쓰되,
+  두 도메인 간 이전 성능은 검증하지 않았음을 명시한다.
 - **N1(claim-only) 점수가 높다고 사실 검증 능력의 증거로 해석하지 않는다** (§7.2).
 - **사례에서 나온 문제를 전부 푼다고 주장하지 않는다.** 코딩한 15건에서 검증 실패는 4개 유형으로
   나왔고 우리가 답하는 것은 A(발언 영상 진위)와 C(주장 근거 일치 여부)뿐이다. **B(채널 정통성) 6/15는 범위 밖**이다 —
@@ -950,7 +1035,8 @@ findeepfake-48h/
 | 순위 | 항목 | 상태 | 비고 |
 |---|---|---|---|
 | **P0-A** | **사건 코딩 완료** (§1.1.1) | ✅ | 15건 코딩 완료. 48시간 일정표에 이 작업 슬롯은 **0분**이라 시계 시작 전에 끝내야 했다 |
-| **P0-B** | HF에서 `dfdc_train_part_00`(+01, 02) 다운로드 | ⬜ | **오너 액션 아님 — 스크립트로 즉시 착수 가능.** Kaggle 배제로 승인 대기가 사라졌다 (§5.1) |
+| **P0-B** | HF에서 `dfdc_train_part_02` 다운로드 | ✅ | 1,748개 / 9.5GB 확보, 라벨 육안 확인·family split 완료 (§5.1) |
+| **P0-D** | **OpenForensics `Val.zip`+`Val_poly.json` 다운로드** (3.24GB) | ⬜ | **Zenodo가 0.79MB/s로 느리다 — 약 40분.** 승인 불필요. 48시간 시계 시작 전에 받아둔다 (§5.6) |
 | **P0-C** | 학습환경 — `torch.cuda.is_available()` | ✅ | `torch 2.12.1+cu126` / GTX 1650 (compute 7.5, 4.29GB) / AMP fp16 동작 확인 |
 | P1 | `ffmpeg` 설치 | ✅ | 9.0 (winget `Gyan.FFmpeg`) |
 | P1 | `requirements.txt` 재작성 | ✅ | FinDeepfake 기준으로 전면 교체. **torch는 의도적으로 제외** — CPU 빌드가 깔리면 학습이 통째로 막힌다 |
@@ -974,11 +1060,12 @@ pip install -r requirements.txt
 
 | 시간 | 작업 | 산출물 |
 |---|---|---|
-| 09:00–10:00 | **라벨 인코딩 육안 확인**, 클래스 비율 측정 | `split_report.json` |
-| 10:00–12:00 | family 단위 split, frame sampling | `splits/*.csv` |
-| 13:00–15:00 | YOLO 검출 → face crop (tight / 1.3×) 생성 | `processed/faces/` |
-| 15:00–16:00 | Detection Success Rate + 수동 스팟체크 50건 | D0 |
-| 16:00–20:00 | V0 / V1 / V2 학습 | 체크포인트 3개 |
+| 09:00–09:30 | ~~라벨 육안 확인~~ ✅완료 · OpenForensics **COCO→YOLO 변환** + bbox 시각 검수 20장 | YOLO 데이터셋 |
+| 09:30–10:30 | **D1**: pretrained zero-shot mAP 평가 (학습 아님, 빠름) | D1 수치 |
+| 10:30–13:30 | **D2**: YOLOv8n fine-tuning (~3h, GPU 점유) — 동시에 CPU로 DFDC frame sampling | 체크포인트 + `processed/frames/` |
+| 13:30–15:00 | fine-tuned YOLO로 DFDC 얼굴 검출 → face crop (tight) 생성 | `processed/faces/` |
+| 15:00–16:00 | D2 mAP 평가 + forged-face recall · DFDC Detection Success Rate + 스팟체크 50건 | D2, D0 |
+| 16:00–20:00 | **V0 / V1 학습** (V2는 사전 포기 확정) | 체크포인트 2개 |
 | 20:00–22:00 | video-level 평가, bootstrap CI, paired 비교 | `vision_metrics.json` |
 
 ### DAY 2
@@ -995,17 +1082,19 @@ pip install -r requirements.txt
 **버퍼 없음이 이 일정의 유일한 약점이다.** 지연 시 포기 순서를 미리 정해둔다:
 
 ```
-1순위 포기: V2 (margin ablation)  → H1-b 철회
-2순위 포기: N0 (DistilBERT)       → NLP baseline 비교 철회, N1 vs N2는 유지
-3순위 포기: Streamlit 데모        → CLI 출력 + 스크린샷으로 대체
-절대 포기 불가: family split · video-level 평가 · bootstrap CI · V0 vs V1 · N1 vs N2
+0순위 (이미 발동): V2 (margin ablation) → H1-b 철회. GPU 슬롯을 D2(YOLO 학습)에 배정
+1순위 포기: D2 epoch 축소 (15 → 8)     → H3은 유지하되 학습량 절반
+2순위 포기: N0 (DistilBERT)            → NLP baseline 비교 철회, N1 vs N2는 유지
+3순위 포기: Streamlit 데모             → CLI 출력 + 스크린샷으로 대체
+절대 포기 불가: family split · video-level 평가 · bootstrap CI · V0 vs V1 · D1 vs D2 · N1 vs N2
 ```
 
-아래 5개는 빼면 **결과 자체가 무의미해지므로** 어떤 상황에서도 유지한다.
-계산량이 작아 4GB VRAM에서도 안전하다 — **최악의 경우에도 프로젝트는 무너지지 않는다.**
+아래 6개는 빼면 **결과 자체가 무의미해지므로** 어떤 상황에서도 유지한다.
 
-> **V2·N0의 포기는 "지연 시"가 아니라 사전 판단으로 앞당길 수 있다.** Day 1 시작 전 VRAM 실측에서
-> 학습 슬롯이 빠듯하다고 판정되면 그 자리에서 제외한다. 사후 재량이 아니라 규칙이다.
+> **"절대 포기 불가" 중 family split과 video-level 평가는 DFDC 분류 축(①-a)에 적용된다.**
+> OpenForensics 검출 축(①-b)은 이미지 데이터셋이라 두 개념이 정의되지 않으며(§5.6),
+> 거기서는 이미지 단위 평가 + 저자 공식 split 존중이 대응 규칙이다. 이 구분을 명시하지 않으면
+> "검출 축에서 video-level 평가를 안 했다"는 자기모순 지적이 가능해진다.
 
 ---
 
@@ -1017,9 +1106,12 @@ pip install -r requirements.txt
 - [ ] family 단위 split 적용 및 `split_report.json` 생성
 - [ ] 영상 1개 입력 → 얼굴 bbox · deepfake 확률 · transcript · claim verification label 전부 출력
 - [ ] V0 vs V1 **video-level paired AUROC + CI** 산출 ← H1
+- [ ] OpenForensics COCO→YOLO 변환 + **bbox 시각 검수 20장**
+- [ ] D1 vs D2 **mAP@50 + forged-face recall** 산출 ← H3
 - [ ] N1 vs N2 **Macro-F1 + bootstrap CI** 산출 ← H2
-- [ ] Detection Success Rate + 수동 스팟체크 기록
-- [ ] §6.4 결과표의 **필수** 행 전부 채움 (V2·N0은 부가)
+- [ ] Detection Success Rate + 수동 스팟체크 기록 (DFDC 축)
+- [ ] **identity 누수 검증 불가**(OpenForensics)를 한계로 명시
+- [ ] §6.4 결과표의 **필수** 행 전부 채움 (V2는 사전 포기, N0은 부가)
 - [ ] Synthetic Integration Test Case 4개로 risk matrix 네 칸 시연 (§5.4)
 - [ ] 한계(§9)를 README와 발표자료에 명시
 
@@ -1055,6 +1147,7 @@ HuggingFace Transformers · DeBERTa-v3-small · Whisper · scikit-learn · Strea
 - Meta DFDC — https://ai.meta.com/datasets/dfdc/
 - DFDC 미러(취득처) — https://huggingface.co/datasets/gonnerthetooner/DFDC-extracted-full
 - DFDC metadata — https://huggingface.co/datasets/scarlettss/dfdc_metadata
+- **OpenForensics** (ICCV 2021) — Zenodo DOI 10.5281/zenodo.5528418 · https://sites.google.com/view/ltnghia/research/openforensics · https://arxiv.org/abs/2107.14480
 - WIDER FACE — https://shuoyang1213.me/WIDERFACE/
 - YOLOv8-Face (pretrained) — https://github.com/lindevs/yolov8-face
 - Fin-Fact — https://github.com/IIT-DM/Fin-Fact · https://huggingface.co/datasets/amanrangapur/Fin-Fact
@@ -1079,3 +1172,8 @@ DFDC·FakeAVCeleb 등 실제 인물의 얼굴이 포함된 데이터는 제출·
 - **얼굴이 식별 가능한 프레임·크롭을 리포지토리에 커밋하거나 공개 데모에 노출하지 않는다.**
   DFDC는 동의한 유급 배우로 구성되지만, 그것이 재배포 권한을 의미하지는 않는다.
   (`.gitignore`가 `data/model/` 전체를 제외하는 이유가 이것이다.)
+
+**OpenForensics 라이선스 상충** (§5.6): Zenodo 메타데이터는 CC-BY-4.0, 프로젝트 페이지는
+CC-BY-NC-SA-4.0, GitHub는 "academic purpose only"로 **세 출처의 표기가 서로 다르다.**
+가장 제한적인 해석(비영리·학술 목적, 재배포 금지)을 채택한다. 원본이 Google Open Images의
+실존 인물 사진이므로 얼굴 이미지 커밋 금지 규정이 동일하게 적용된다.
