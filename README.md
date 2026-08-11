@@ -540,13 +540,27 @@ from datasets import load_dataset
 ds = load_dataset("amanrangapur/Fin-Fact")
 ```
 
-**사용 컬럼**: `Claim`, `Claim Label`, `Evidence`, `Justification`
+**실제 컬럼** (실측): `url`, `claim`, `author`, `posted`, `sci_digest`, `justification`, `issues`,
+`image_data`, `evidence`, `label`, `visualization_bias`. 이 중 **`claim` · `evidence` · `label`**만 쓴다.
+
+**규모와 라벨 분포** (2026-08-11 실측):
+
+| 항목 | 값 |
+|---|---|
+| 총 건수 | **3,369** (split은 `train` 하나뿐 — **자체 분할 필요**) |
+| 라벨 | `false` 1,485 / `true` 1,273 / `neutral` 611 |
+| 최소 클래스 | 611 |
+
+> ✅ **Day 2 게이트 ① 통과 — 클래스 병합 불필요.** 최소 클래스가 611로 기준(50)을 크게 넘는다.
+> 3-class Macro-F1을 그대로 쓴다.
+>
+> ⚠️ **데이터셋이 split을 제공하지 않는다.** train/val/test를 직접 만들어야 하며, 라벨 층화(stratify)와
+> seed 42 고정, 분할 해시 기록을 Vision과 동일하게 적용한다.
+
+> 🚨 **Day 2 게이트 ② 발동 — evidence가 max_len을 크게 초과한다.** 중앙 574 / P95 1,753 / 최대 8,046 토큰.
+> 처리 방식(claim-guided 문장 선택)과 근거는 **§8.2**에 확정해 두었다. 학습 전에 반드시 읽을 것.
 
 Evidence는 옵션이 아니라 **H2의 핵심 변수**다 (§7.2).
-
-> ⚠️ Day 2 첫 작업 두 가지: ① 라벨 분포와 클래스별 표본 수 확인 —
-> 최소 클래스가 50 미만이면 Macro-F1이 불안정해지므로 클래스 병합 여부를 그 자리에서 결정.
-> ② **evidence 토큰 길이 분포 측정** (§7.2 전제 게이트).
 
 ### 5.3 얼굴 검출기 — pretrained, 학습 안 함
 
@@ -771,13 +785,46 @@ stock, shares, dividend, investment, billion, million, quarter, SEC
 | 1단계 | backbone freeze, 2–3 epoch | — |
 | 2단계 | 상위 블록 unfreeze, 2–5 epoch | 3–5 epoch |
 | LR | 1e-3 → 1e-4 | 2e-5 |
-| Batch | 32 | 16 |
-| max_len | — | **측정 후 결정** (아래) |
+| Batch | 32 | **16** (N1 64토큰 / N2 256토큰) |
+| max_len | — | **N1 64 · N2 256** (실측 근거는 아래) |
 | 기타 | AMP, early stopping | AMP, early stopping, seed 42 고정 |
 
-**max_len은 512로 고정하지 않는다.** Day 2 첫 작업(§7.2 전제 게이트)에서 Fin-Fact evidence의 실제 토큰 길이
-분포를 측정하고, **P95 ≤ 256이면 256으로 내린다.** 4GB VRAM에서 512는 배치를 크게 제약하는데,
-데이터가 요구하지 않는 길이를 미리 고집할 이유가 없다. 측정값과 결정을 `results/`에 기록한다.
+#### 실측 — GTX 1650 4GB에서 512는 쓸 수 없다
+
+DeBERTa-v3-small 학습 스텝을 직접 측정했다 (AMP fp16, 3,369건 1 epoch 환산):
+
+| max_len | batch | peak VRAM | 1 epoch | 판정 |
+|---:|---:|---:|---:|---|
+| 512 | 8 | **4.40 GB** | 39.7분 | ❌ 카드 용량(4.29GB) 초과 — 스텝이 batch 4보다 **2배 느리다**(5.7s vs 2.7s). 메모리 스래싱 |
+| 512 | 4 | 3.14 GB | 38.5분 | ⚠️ 돌지만 느림. 4 epoch = 2.6시간 |
+| **256** | **16** | 3.99 GB | **16.2분** | ✅ 채택 |
+
+**batch를 8로 키웠더니 오히려 2배 느려진 것**이 결정적 증거다. 4.40GB는 이 카드에 안 들어가고,
+초과분이 호스트 메모리로 밀려나면서 스텝 시간이 무너진다. Day 2 오전 3시간 슬롯에 N1·N2를
+모두 넣으려면 512는 성립하지 않는다.
+
+#### 그래서 evidence 처리 방식이 강제된다
+
+Fin-Fact evidence 토큰 길이 실측 (n=3,369):
+
+```
+claim     중앙   14  P95    29  최대    66   ← 짧다. N1은 max_len 64로 충분
+evidence  중앙  574  P95 1,753  최대 8,046   ← 길다
+max_len=512 → 43.6%만 절단 없음
+max_len=256 → 17.9%만 절단 없음
+```
+
+**앞에서부터 자르는 방식(head truncation)은 채택하지 않는다.** 256에서 82%가 잘리면 N2는
+"evidence를 본 모델"이 아니라 "evidence 첫 문단을 본 모델"이 되고, §7.2의 해석표가 통째로 오염된다.
+
+> **결정: claim-guided 문장 선택.** evidence를 문장 단위로 쪼갠 뒤 claim과의 어휘 유사도(TF-IDF)
+> 상위 문장부터 256 토큰 예산이 찰 때까지 담는다. 선택된 문장은 원문 순서를 유지한다.
+>
+> 이것은 **외부 검색이 아니다.** 검색 범위가 "이 claim에 딸려 제공된 evidence 필드 내부"로 한정되므로
+> §2.1의 "Evidence Retrieval System이 아니다"와 충돌하지 않는다. 발표에서는
+> **"제공된 evidence 내에서 claim 관련 문장을 선택했다"**고 정확히 표현한다.
+>
+> 선택 전후의 토큰 길이 분포와 평균 문장 보존율을 `results/nlp_metrics.json`에 기록한다.
 
 **OOM 대응은 미리 config 기본값으로 넣어둔다** — AMP 강제, batch 축소 + gradient accumulation으로
 effective batch를 유지. Day 1 16:00에 OOM을 발견하면 학습 슬롯을 통째로 날린다.
