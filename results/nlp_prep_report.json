@@ -1,0 +1,17 @@
+{
+  "seed": 42,
+  "evidence_budget_tokens": 256,
+  "rows": {
+    "train": 2358,
+    "val": 505,
+    "test": 506
+  },
+  "sentence_keep_rate": 0.4031,
+  "avg_selected_tokens": 200.7,
+  "split_sha256": {
+    "train": "4221ba03a9a9faeb",
+    "val": "cfdc7b8ac253b833",
+    "test": "aeca43699909a809"
+  },
+  "method": "claim-guided TF-IDF sentence selection within provided evidence (not retrieval); selected sentences keep original order"
+}
