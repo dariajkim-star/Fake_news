@@ -1,0 +1,11 @@
+{
+  "variant": "v0",
+  "frames_root": "data\\model\\processed\\frames",
+  "seed": 42,
+  "batch": 32,
+  "best_val_video_auroc": 0.8994,
+  "epochs": [
+    2,
+    4
+  ]
+}

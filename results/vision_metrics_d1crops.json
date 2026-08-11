@@ -1,0 +1,39 @@
+{
+  "split": "data\\model\\splits\\test.csv",
+  "n_boot": 2000,
+  "seed": 42,
+  "bootstrap_unit": "family",
+  "v0": {
+    "auroc": 0.9566,
+    "auprc": 0.9926,
+    "macro_f1": 0.864,
+    "fake_recall": 0.9867,
+    "balanced_acc": 0.8267,
+    "accuracy": 0.9457,
+    "auroc_ci95": [
+      0.9241,
+      0.9848
+    ]
+  },
+  "v1": {
+    "auroc": 1.0,
+    "auprc": 1.0,
+    "macro_f1": 0.9912,
+    "fake_recall": 1.0,
+    "balanced_acc": 0.9848,
+    "accuracy": 0.9961,
+    "auroc_ci95": [
+      1.0,
+      1.0
+    ]
+  },
+  "paired_v1_minus_v0": {
+    "videos": 258,
+    "delta_auroc": 0.0434,
+    "ci95": [
+      0.0152,
+      0.0759
+    ],
+    "verdict": "개선"
+  }
+}
