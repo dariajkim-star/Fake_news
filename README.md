@@ -1,9 +1,9 @@
 # FinDeepfake-48h
 
-**Face-Level Object Detection + Financial Claim NLP for Deepfake-Enabled Financial Disinformation**
+**Face-Level Object Detection + Evidence-Based Financial Claim Verification for Deepfake-Related Investment Risk**
 
 48시간 안에 완주하는 것을 설계 제약으로 삼은 멀티모달 딥러닝 프로젝트다.
-영상이 **AI로 조작되었는지**와, 영상 속 **금융 주장이 신뢰할 만한지**를 각각 판정한다.
+영상이 **AI로 합성·조작되었는지**와, 영상 속 **금융 주장이 제공된 근거와 일치하는지**를 각각 판정한다.
 
 ---
 
@@ -26,14 +26,14 @@
 |---|---|---|---|---|---|
 | Case A | CEO·임원 deepfake | 경영진의 실제 지시 | 송금 | 금전손실 | **C15** 홍콩 다국적기업 재무직원, CFO deepfake 화상회의 후 **US$25M** 송금 |
 | Case B | 유명인 deepfake | 검증된 투자상품 | 가입/송금 | 투자금 손실 | **C11** Martin Lewis 딥페이크 광고 **£75,000** · **C12** 인도 재무장관 딥페이크 'SpaceX 주식' **₹1.07 crore** |
-| Case C | 조작 기업발표·허위사실 | 기업의 실제 발표 | 주식 매수 | 가격 하락 손실 | **C09** 투자자문업체 사칭 '손실복구·비상장주 저가매수' **18억원** |
+| Case C | 허위 투자정보·사칭 권유 | 검증된 투자정보·손실복구 기회 | 매수/송금 | 투자금 손실 | **C09** 투자자문업체 사칭 '손실복구·비상장주 저가매수' **18억원** |
 | Case D | AI 영상 + 가짜 사이트·앱 | 공식 금융서비스 | 자금이체 | 사기피해 | **C03** FXRP 가짜 스테이킹 사이트(대역배우 동원) **273억원** · **C02** 증권사 사칭 'AI 추천주' 리딩방 **99억원** |
 
 여기서 공통 pain point 두 개가 나온다.
 
 ```
-Pain Point ①  누가 실제로 말했는지 검증하기 어렵다   → Media Authenticity 문제
-Pain Point ②  발언 내용이 사실인지 판단하기 어렵다   → Financial Claim Verification 문제
+Pain Point ①  실제 촬영된 발언 영상인지, AI로 합성·조작된 영상인지 판단하기 어렵다   → Media Authenticity 문제
+Pain Point ②  발언 내용이 확인 가능한 근거와 일치하는지 판단하기 어렵다   → Evidence-based Financial Claim Verification 문제
 ```
 
 ### 1.1.1 코딩 결과 — 투자자는 무엇을 확인하지 못했는가
@@ -42,17 +42,16 @@ Pain Point ②  발언 내용이 사실인지 판단하기 어렵다   → Finan
 
 | 유형 | 투자자가 답하지 못한 질문 | 해당 | 대응 축 |
 |---|---|---:|---|
-| **A. 화자 신원 불확인** | "이 얼굴·목소리가 진짜 그 사람인가?" | **13/15** | ① |
+| **A. 발언 영상 진위 불확인** | "이 영상은 실제 촬영본인가, AI로 합성·조작된 것인가?" | **13/15** | ① |
 | **B. 채널 정통성 불확인** | "이 계정·앱·링크가 공식인가?" | 6/15 | ①의 주변 |
-| **C. 주장 사실성 불확인** | "이 금융 주장이 근거가 있는가?" | **12/15** | ② |
+| **C. 주장 근거 일치 여부 불확인** | "이 금융 주장이 확인 가능한 근거와 일치하는가?" | **12/15** | ② |
 | **D. 위조된 사후 증거** | "내가 본 수익 화면은 진짜인가?" | 5/15 | ①②의 결합 |
 
-**A**의 대표 진술: C04 피해자는 영상 속 인물이 유명 유튜버와 외모·목소리가 매우 유사해 의심하지 못했고,
-**사후에야** 딥페이크임을 알았다. C15(홍콩 CFO 화상회의, US$25M)는 실시간 화상회의라는 '최후의 신원확인 수단'까지
-무력화된 사례다.
+**A**의 대표 진술: C04 피해자는 영상이 실제 촬영된 콘텐츠처럼 보여 의심하지 못했고,
+**사후에야** 딥페이크임을 알았다. C15(홍콩 CFO 화상회의, US$25M)는 실시간 화상회의조차
+합성·조작 미디어의 신뢰성을 높이는 장치로 악용될 수 있음을 보여주는 **인접 금융 딥페이크 사례**다.
 
-**C**의 주장들은 대부분 **외부 사실과 대조하면 즉시 반증 가능**했다 — "600% 수익 보장", "매일 이자 지급",
-비상장 주식 저가 매수(유통 자체가 불가), 유명인의 투자 사실(당사자가 공식 부인). 검증 경로가 없었을 뿐이다.
+**C**의 주장들은 상당수가 **확인 가능한 외부 근거와 대조했을 때 지지되지 않거나 반박되는 형태**였다 — "600% 수익 보장", "매일 이자 지급", 비상장 주식 저가 매수, 유명인의 투자 사실 등이다. 핵심 문제는 투자 판단 시점에 이를 대조할 검증 경로가 부족했다는 점이다.
 
 **D가 이 프로젝트가 두 축을 모두 만드는 이유다.** 투자자가 스스로 검증하려 할 때 마주치는 증거(가짜 HTS 수익 화면,
 위조 인증, 초기 며칠의 실제 이자 지급)마저 조작돼 있어 **자가검증 루프가 닫힌다.**
@@ -66,8 +65,8 @@ Pain Point ②  발언 내용이 사실인지 판단하기 어렵다   → Finan
 ①② 둘 다               : 11건   ← 73%
 ```
 
-**15건 중 11건이 두 문제를 동시에 겪었다.** 단일 모달 검증으로 대응 불가하다는 실증이며,
-§1.3에서 두 판정을 분리해 **둘 다** 제시하기로 한 설계 결정의 근거다.
+**15건 중 11건에서 두 종류의 검증 실패가 함께 관찰됐다.** 따라서 한 가지 검증 축만으로는
+사례에서 드러난 두 위험을 모두 다루기 어렵다고 보고, §1.3에서 두 판정을 분리해 **둘 다** 제시한다.
 
 전체 코딩 표는 [`data/research/coded_cases.csv`](data/research/coded_cases.csv) 참조 (15행 × 12필드).
 
@@ -85,24 +84,24 @@ Pain Point ②  발언 내용이 사실인지 판단하기 어렵다   → Finan
 
 **문제정의 문장:**
 
-> 딥페이크를 활용한 투자사기와 허위 금융정보 유포로, 투자자는 온라인 영상에서
-> **실제 인물이 실제로 발언한 것인지**와 **발언 내용이 사실에 근거하는지**를
-> 동시에 확인해야 하는 부담을 지게 된다. 본 프로젝트는 실제 피해 사례 15건을 코딩해
-> 검증 실패 지점을 4개 유형으로 도출하고, **그중 기술적으로 다룰 수 있는 두 가지**를
-> ① 영상 진위 판별과 ② 금융 주장 사실검증으로 정의해, Object Detection 기반
-> Deepfake Detection과 NLP 기반 Financial Claim Verification을 결합한
-> 투자정보 검증 PoC를 구현한다.
+> 딥페이크를 활용한 투자사기와 허위 금융정보 피해 사례를 분석한 결과, 피해자는 투자 판단에 앞서
+> **온라인 영상이 실제 촬영된 발언인지 AI로 합성·조작된 것인지**, 그리고 **영상 속 금융 주장이
+> 확인 가능한 근거와 일치하는지**를 검증하는 데 어려움을 겪었다. 본 프로젝트는 심층 코딩한 대표 피해사례에서
+> 반복된 검증 실패 중 기술적으로 다룰 수 있는 두 문제를 ① 영상의 조작 여부 판별과 ② 근거 기반 금융 주장 검증으로
+> 정의한다. 이를 위해 pretrained Object Detection으로 발언자의 얼굴 ROI를 추출한 Deepfake Detection과
+> NLP 기반 Evidence-based Financial Claim Verification을 구현하고, 두 판단을 독립적으로 제시하는
+> 투자정보 검증 PoC를 구축한다.
 
 즉 문제는 "deepfake 영상을 탐지한다"가 아니라
-**"투자자의 판단 이전에 영상의 진위와 금융 주장 신뢰도를 동시에 확인할 수단이 부족하다"**이다.
+**"투자자의 판단 이전에 영상의 조작 여부와 금융 주장의 근거 일치 여부를 함께 확인할 수단이 부족하다"**이다.
 
 **다루는 것과 다루지 않는 것을 여기서 분명히 한다.** §1.1.1의 4개 유형 중 우리 시스템이
 답하는 것은 A와 C뿐이다. 사례에서 나온 문제를 전부 푸는 것처럼 말하지 않는다.
 
 | 유형 | 해당 | 본 PoC | 근거 |
 |---|---:|---|---|
-| **A. 화자 신원 불확인** | 13/15 | ✅ **축 ①** | Deepfake Detection이 직접 답한다 |
-| **C. 주장 사실성 불확인** | 12/15 | ✅ **축 ②** | Claim Verification이 직접 답한다 |
+| **A. 발언 영상 진위 불확인** | 13/15 | ✅ **축 ①** | Deepfake Detection이 영상의 합성·조작 가능성을 직접 평가한다 |
+| **C. 주장 근거 일치 여부 불확인** | 12/15 | ✅ **축 ②** | Evidence-based Claim Verification이 claim과 근거의 관계를 평가한다 |
 | **B. 채널 정통성 불확인** | 6/15 | ❌ **범위 밖** | "이 계정·앱·링크가 공식인가"는 도메인 평판·인증서·플랫폼 메타데이터의 문제이며, 영상·텍스트 콘텐츠 분석으로 답할 수 없다 (C02 유튜브 댓글의 상담 링크, C05 로고 도용 가짜 채널, C07 사칭 이메일) |
 | **D. 위조된 사후 증거** | 5/15 | △ **간접** | 직접 탐지하지 않는다. 다만 D는 **①②를 함께 제시해야 하는 이유**다 — 자가검증 증거가 조작돼 있으면 한 축만으로는 뚫린다 |
 
@@ -110,7 +109,7 @@ Pain Point ②  발언 내용이 사실인지 판단하기 어렵다   → Finan
 실재하는 문제이고, §9(주장하지 않는 것)와 향후 확장 방향에 함께 남긴다.
 
 또한 코딩된 15건 중 **13건이 영상 기반**이고 2건(C07 사칭 이메일, C09 오픈채팅 사칭)은 영상이 아니다.
-"온라인 영상"이라는 범위 한정은 사례의 87%를 덮지만 전부는 아니며, 이 역시 명시한다.
+"온라인 영상"이라는 범위 한정은 사례의 87%를 덮지만 전부는 아니며, 이 역시 명시한다. C15는 개인 투자자 피해가 아니라 기업 내부 송금 사기이므로, 투자자 pain point의 핵심 표본이라기보다 **인접 금융 딥페이크 사례**로 구분해 해석한다.
 
 ### 1.1.2 기사에서 사건으로 — 무엇을 세었는가
 
@@ -127,7 +126,7 @@ Pain Point ②  발언 내용이 사실인지 판단하기 어렵다   → Finan
    ↓   제목 유사도 기반 동일 사건 병합
   189  사건 후보 클러스터
    ↓   예방캠페인·정책·홍보 제외 + 동일사건 수동 병합
-   15  verified incident  ← 심층 코딩 완료 (D-1 산출물)
+   15  대표 피해사례  ← 심층 코딩 완료 (D-1 산출물)
 ```
 
 병합 규모가 이 구분의 필요성을 보여준다 — **캄보디아 부부 로맨스스캠(101억원) 한 사건이 구속기소·재판·선고
@@ -136,7 +135,7 @@ Pain Point ②  발언 내용이 사실인지 판단하기 어렵다   → Finan
 발표에서 쓸 표현은 이것이다:
 
 > 국내외 금융 딥페이크·투자사기 기사 **2,995건**을 수집해 관련 사건을 선별했고,
-> **검증된 대표 피해사례 15건**을 심층 코딩해 pain point를 도출했다.
+> **대표 피해사례 15건**을 심층 코딩해 pain point를 도출했다.
 
 심층 코딩 결과는 [`data/research/coded_cases.csv`](data/research/coded_cases.csv)에 있고, 각 사건마다
 사칭 대상 · 조작 매체 · 허위 claim · 피해자 행동 · 피해 방식 · 피해액 · **기존 검증 실패지점**을 기록한다.
@@ -157,12 +156,12 @@ Pain Point ②  발언 내용이 사실인지 판단하기 어렵다   → Finan
 STEP 0  Problem Discovery
         국내외 금융 딥페이크·투자사기 기사 크롤링 (2,995건)
           → 중복 제거 / 동일 사건 병합
-          → 검증된 대표 피해사례 15건 심층 코딩
+          → 대표 피해사례 15건 심층 코딩
           → Pain Point Map
             ↓
 STEP 1  Problem Definition
-        ① 투자자는 영상이 실제 인물의 실제 영상인지 판단하기 어렵다
-        ② 영상 속 금융 발언이 사실에 근거하는지 판단하기 어렵다
+        ① 투자자는 영상이 실제 촬영본인지 AI로 합성·조작된 것인지 판단하기 어렵다
+        ② 영상 속 금융 주장이 확인 가능한 근거와 일치하는지 판단하기 어렵다
             ↓
 STEP 2  Technical Problems
         ① Media Authenticity Detection
@@ -198,6 +197,8 @@ STEP 5  Validation
 
 이 프로젝트의 대상은 **맨 아래 줄**이다.
 
+> 단, **disinformation은 속이려는 의도(intent)를 포함하는 개념**이다. 본 모델은 의도 자체를 추론하지 않으므로 최종 출력에서는 `disinformation`을 직접 판정하지 않는다. 모델은 `media authenticity`와 `claim verification`을 각각 출력하고, 두 신호의 조합을 위험 신호로 해석한다.
+
 구체적 시나리오 — SNS에 이런 영상이 돈다:
 
 > **Jamie Dimon (JPMorgan CEO)**: "저희는 이번 분기 100억 달러의 예상치 못한 손실을 기록했습니다."
@@ -211,10 +212,10 @@ STEP 5  Validation
 
 ```
 Q1. 이 영상은 AI로 조작되었는가?          → Media Authenticity
-Q2. 영상 속 금융 주장은 신뢰할 만한가?      → Claim Credibility
+Q2. 영상 속 금융 주장은 제공된 근거에 의해 지지되는가? → Evidence-based Claim Verification
 ```
 
-합치지 않는 이유는 명확하다. **조작된 영상이 참말을 할 수 있고, 진짜 영상이 거짓말을 할 수 있다.**
+합치지 않는 이유는 명확하다. **합성·조작된 영상의 주장도 근거에 의해 지지될 수 있고, 실제 영상의 주장도 근거와 불일치할 수 있다.**
 두 신호를 하나의 "Fake News Probability"로 뭉개면 정보가 사라지고, 무엇보다 그렇게 학습시킬 근거가 없다
 (→ §8.3). 대신 두 축을 그대로 보여주고 조합만 해석한다.
 
@@ -227,7 +228,7 @@ Q2. 영상 속 금융 주장은 신뢰할 만한가?      → Claim Credibility
 | **H1** | 투자 영상에서 얼굴 영역을 Object Detection으로 추출하면 full-frame 대비 deepfake 탐지 성능이 개선된다 | 정량 (V0 vs V1, paired ΔAUROC) |
 | **H1-b** | ROI margin — 배경 문맥은 도움인가 방해인가? | 정량 (V1 vs V2, paired ΔAUROC) |
 | **H2** | claim만 사용하는 것보다 evidence를 함께 사용하면 금융 claim 검증 성능이 개선된다 | 정량 (N1 vs N2, Macro-F1) |
-| **RQ3** | 조작 여부와 주장 신뢰도를 분리 제시하는 것이 단일 라벨보다 설명 가능한 위험 신호를 주는가? | 정성 (사례 분석) |
+| **RQ3** | 조작 여부와 주장 근거 검증 결과를 분리 제시하는 것이 단일 라벨보다 설명 가능한 위험 신호를 주는가? | 정성 (사례 분석) |
 
 **H1은 정직하게 말해 "확인"에 가깝다.** 얼굴 crop이 유리하다는 건 forensics에서 널리 쓰이는 전제다.
 그래서 H1-b를 붙였다. crop margin의 최적점은 실제로 알려져 있지 않고, 학습 한 번이면 답이 나온다.
@@ -359,8 +360,8 @@ models/
   },
   "risk": {
     "media_authenticity": "SYNTHETIC",
-    "claim_credibility": "LOW",
-    "combined": "HIGH RISK"
+    "claim_verification": "REFUTED",
+    "combined": "HIGH RISK — synthetic media + refuted claim"
   }
 }
 ```
@@ -377,7 +378,7 @@ models/
 ─────────────────────────────
 Investment Information Risk
   Media Authenticity : HIGH RISK
-  Claim Reliability  : HIGH RISK
+  Claim Verification : REFUTED
 ```
 
 ### 4.3 결과 파일
@@ -503,6 +504,7 @@ FAKE = 1
 
 **영상 규격 실측**: 1920×1080 / 30fps / 300 frame(10초). 샘플 8건 전부 OpenCV로 정상 디코딩.
 §8.1의 `sample_fps=2, max_frames=20` 설정은 10초 영상에서 정확히 20 프레임을 뽑는다 — 일치한다.
+디코딩 비용은 영상당 1.94초로, 1,748개 전체가 단일 프로세스 57분 / 멀티프로세스 10~15분이다.
 
 **⚠️ 가장 중요한 전처리 조건 — family 단위 split**
 
@@ -585,9 +587,9 @@ detector를 학습 대상으로 삼는 순간 bbox 라벨링이 필요해지고,
 | fixture | Media | Claim | 확인하는 것 |
 |---|---|---|---|
 | F1 | REAL | SUPPORTED | 정상 경로 (오탐 없음) |
-| F2 | REAL | REFUTED | 진짜 사람의 허위 발언 → MISINFORMATION |
+| F2 | REAL | REFUTED | 실제 영상 + 근거와 불일치하는 주장 → CLAIM RISK |
 | F3 | FAKE | SUPPORTED | 합성 미디어지만 내용은 사실 → SYNTHETIC MEDIA |
-| F4 | FAKE | REFUTED | deepfake-enabled disinformation → HIGH RISK |
+| F4 | FAKE | REFUTED | 합성·조작 미디어 + 근거와 불일치하는 주장 → HIGH RISK |
 
 **이건 모델 평가 데이터셋이 아니라 시스템 동작 시연용 fixture다.** §6.4 결과표에 어떤 수치도 기여하지 않는다.
 
@@ -805,7 +807,7 @@ DeBERTa-v3-small 학습 스텝을 직접 측정했다 (AMP fp16, 3,369건 1 epoc
 
 #### 그래서 evidence 처리 방식이 강제된다
 
-Fin-Fact evidence 토큰 길이 실측 (n=3,369):
+Fin-Fact 토큰 길이 실측 (n=3,369):
 
 ```
 claim     중앙   14  P95    29  최대    66   ← 짧다. N1은 max_len 64로 충분
@@ -850,15 +852,15 @@ model(batch: dict) -> logits  # [B, num_classes]
 
 대신 두 축을 그대로 두고 **해석만 조합**한다.
 
-| Media Authenticity | Claim Credibility | 판정 | 의미 |
+| Media Authenticity | Claim Verification | 판정 | 의미 |
 |---|---|---|---|
-| REAL | Credible | **LOW** | 정상 |
-| SYNTHETIC | Credible | **SYNTHETIC MEDIA** | 조작 미디어지만 내용은 사실 (합성 앵커 등) |
-| REAL | Suspicious | **MISINFORMATION** | 진짜 사람의 허위·오도 발언 |
-| SYNTHETIC | Suspicious | **HIGH RISK** | deepfake-enabled disinformation |
+| REAL | Supported | **LOW** | 실제 영상 + 근거에 의해 지지되는 주장 |
+| SYNTHETIC | Supported | **SYNTHETIC MEDIA** | 합성·조작 미디어지만 주장은 제공된 근거에 의해 지지됨 |
+| REAL | Refuted | **CLAIM RISK** | 실제 영상이지만 제공된 근거와 일치하지 않는 주장 |
+| SYNTHETIC | Refuted | **HIGH RISK** | synthetic media + refuted claim; 기만 의도 자체는 모델이 판정하지 않음 |
 
 **이 4칸 구조가 RQ3의 답이다.** 단일 확률 하나로는 두 번째·세 번째 칸을 구분할 수 없다.
-발표에서는 각 칸의 실제 사례를 데모 영상으로 시연한다.
+단, **disinformation은 기만 의도까지 포함하는 개념이므로 모델의 직접 출력 라벨로 사용하지 않는다.** 발표에서는 각 칸을 Synthetic Integration Test Case로 시연한다.
 
 ---
 
@@ -868,7 +870,7 @@ model(batch: dict) -> logits  # [B, num_classes]
 
 - **"AI가 금융 뉴스를 자동 팩트체크한다"고 주장하지 않는다.**
   claim classifier는 외부 evidence retrieval을 하지 않는다. 임의의 새로운 발언에 대한
-  절대적 진실 판별기가 아니라, Fin-Fact 라벨 패턴을 학습한 분류기다.
+  절대적 진실 판별기가 아니라, **주어진 claim과 evidence의 관계를 Fin-Fact 라벨 체계 안에서 판정하는 모델**이다.
 - **DFDC sample에서의 성능이 실제 금융 deepfake에 이전된다고 주장하지 않는다.**
   DFDC는 금융 도메인 데이터가 아니다. 도메인 이전은 검증되지 않았고, 이를 한계로 명시한다.
 - **"YOLO를 학습해 Object Detection 모델을 개발했다"고 말하지 않는다.** pretrained detector를 그대로 쓴다.
@@ -879,7 +881,7 @@ model(batch: dict) -> logits  # [B, num_classes]
   현재 설계는 그 요구가 없다는 전제 위에 있다.)
 - **N1(claim-only) 점수가 높다고 사실 검증 능력의 증거로 해석하지 않는다** (§7.2).
 - **사례에서 나온 문제를 전부 푼다고 주장하지 않는다.** 코딩한 15건에서 검증 실패는 4개 유형으로
-  나왔고 우리가 답하는 것은 A(화자 신원)와 C(주장 사실성)뿐이다. **B(채널 정통성) 6/15는 범위 밖**이다 —
+  나왔고 우리가 답하는 것은 A(발언 영상 진위)와 C(주장 근거 일치 여부)뿐이다. **B(채널 정통성) 6/15는 범위 밖**이다 —
   "이 계정·앱·링크가 공식인가"는 도메인 평판·인증서·플랫폼 메타데이터의 문제이고 콘텐츠 분석으로
   답할 수 없다. 실제로 C02·C05·C07은 콘텐츠가 아니라 **콘텐츠가 놓인 컨테이너**에서 뚫렸다 (§1.1).
 - **코딩 사례의 87%(13/15)만 영상 기반이다.** C07(사칭 이메일)·C09(오픈채팅 사칭)처럼 영상이 없는
@@ -1013,7 +1015,7 @@ pip install -r requirements.txt
 
 - [ ] **사건 코딩 15건 + Pain Point Map** (§1.1.1) — 48시간 시계 시작 전
 - [ ] family 단위 split 적용 및 `split_report.json` 생성
-- [ ] 영상 1개 입력 → 얼굴 bbox · deepfake 확률 · transcript · claim label 전부 출력
+- [ ] 영상 1개 입력 → 얼굴 bbox · deepfake 확률 · transcript · claim verification label 전부 출력
 - [ ] V0 vs V1 **video-level paired AUROC + CI** 산출 ← H1
 - [ ] N1 vs N2 **Macro-F1 + bootstrap CI** 산출 ← H2
 - [ ] Detection Success Rate + 수동 스팟체크 기록
@@ -1042,9 +1044,9 @@ HuggingFace Transformers · DeBERTa-v3-small · Whisper · scikit-learn · Strea
 
 ## 14. 제목 후보
 
-- **기본** — FinDeepfake-48h: Object Detection and NLP for Financial Deepfake Risk Screening
-- **포트폴리오형** — Multimodal Financial Deepfake Screening with Face Detection and Financial NLP
-- **논문형** — *Does Face-Level Object Detection Improve Deepfake Screening, and Can Claim-Only NLP Verify Financial Facts?* — A Lightweight Two-Track Study
+- **기본** — FinDeepfake-48h: Object Detection and Evidence-Based NLP for Financial Deepfake Risk Screening
+- **포트폴리오형** — Multimodal Financial Deepfake Screening with Face ROI Detection and Evidence-Based Claim Verification
+- **논문형** — *Does Face-Level ROI Improve Deepfake Detection, and Does Evidence Improve Financial Claim Verification?* — A Lightweight Two-Track Study
 
 ---
 
