@@ -378,19 +378,47 @@ results/
 
 ## 5. 데이터셋
 
-### 5.1 DFDC Sample — Deepfake Vision
+### 5.1 DFDC train part — Deepfake Vision
 
 **출처**
-- Meta: https://ai.meta.com/datasets/dfdc/
-- Kaggle: https://www.kaggle.com/competitions/deepfake-detection-challenge/data
+- 원출처(Meta): https://ai.meta.com/datasets/dfdc/
+- 실제 취득처: HuggingFace 미러 https://huggingface.co/datasets/gonnerthetooner/DFDC-extracted-full
+- metadata만 별도: https://huggingface.co/datasets/scarlettss/dfdc_metadata
 
-전체 DFDC는 10만 개 이상이라 손댈 수 없다. Kaggle이 제공하는 **sample training set**만 쓴다.
+**Kaggle을 쓰지 않는다.** 계정·대회 규약 동의·승인 대기가 전부 사라지고, 받는 데이터는 동일한 mp4와
+동일한 metadata 스키마다. 전체 DFDC는 10만 개 이상이라 손댈 수 없으므로 **`dfdc_train_part_XX` 단위로 받는다.**
 
-**metadata 구조**
+```bash
+python -c "from huggingface_hub import snapshot_download; snapshot_download('gonnerthetooner/DFDC-extracted-full', repo_type='dataset', allow_patterns='dfdc_train_part_00/**', local_dir='data/model/raw/dfdc')"
+```
+
+**part_00 실측** (2026-08-11 확인, 인증 불필요):
+
+| 항목 | 값 |
+|---|---|
+| 영상 수 | **1,334** (mp4) |
+| 라벨 분포 | FAKE **1,248** / REAL **86** → **14.5 : 1** |
+| **고유 원본(family) 수** | **86** |
+| 용량 | 약 **10.6 GB** |
+| 사용 가능 part | `part_00` ~ `part_09` (10개) |
+
+> 🚨 **이 표에서 가장 중요한 숫자는 1,334가 아니라 86이다.** family 단위로 자르면 **독립 표본은 86개**다.
+> 70/15/15로 나누면 test family는 **13개**뿐이다. 영상 수를 표본 수로 착각하면 신뢰구간을 15배 좁게
+> 보고하게 된다. → **part를 2~3개 받아 family 250개 수준을 확보할 것을 권한다** (§6.1 함정 3).
+
+> ⚠️ **클래스 불균형이 예상보다 훨씬 심하다.** 당초 "FAKE가 많다" 정도로 적었으나 실측은 **14.5:1**이다.
+> 전부 FAKE로 찍으면 Accuracy 93.6%가 나온다. §6.2에서 Accuracy를 주 지표로 쓰지 않기로 한 결정이
+> 이 수치로 정당화된다.
+
+**metadata 구조** (실물 확인)
 
 ```json
-{ "abc.mp4": { "label": "FAKE", "original": "xyz.mp4", "split": "train" } }
+{ "owxbbpjpch.mp4": { "label": "FAKE", "split": "train", "original": "wynotylpnm.mp4" },
+  "vpmyeepbep.mp4": { "label": "REAL", "split": "train" } }
 ```
+
+`original` 필드가 FAKE 1,248건 전부에 존재한다 — **family split의 전제가 성립함을 확인했다.**
+경로는 `dfdc_train_part_00/dfdc_train_part_0/metadata.json` (디렉터리가 한 단계 더 중첩된 점에 주의).
 
 **내부 라벨 규약**
 
@@ -399,8 +427,8 @@ REAL = 0
 FAKE = 1
 ```
 
-> ⚠️ **Day 1 첫 30분에 반드시 눈으로 확인할 것**: 실제 배포본의 라벨 문자열과 클래스 비율.
-> DFDC sample은 FAKE가 압도적으로 많다. 이 비율을 모르면 §6.2의 지표 선택이 통째로 틀어진다.
+> ⚠️ **Day 1 첫 30분에 여전히 눈으로 확인할 것**: 받은 part의 라벨 문자열과 클래스 비율.
+> 위 실측은 part_00 기준이며, 다른 part도 같으리라 가정하지 않는다.
 
 **⚠️ 가장 중요한 전처리 조건 — family 단위 split**
 
@@ -501,7 +529,9 @@ DFDC sample은 FAKE 비율이 높다. 전부 FAKE로 찍어도 Accuracy가 높�
 → **주 지표는 AUROC와 Average Precision(PR-AUC)**, Accuracy는 참고용으로만 병기한다.
 
 **함정 3 — 표본이 작아서 작은 차이는 노이즈다.**
-family 단위로 자르고 나면 테스트 영상은 100개 미만일 가능성이 크다.
+**독립 표본은 영상이 아니라 family다.** part_00 실측으로 family는 86개뿐이고, 70/15/15 분할 시
+**test family는 13개**다. 영상 수(1,334)를 표본 수로 쓰면 신뢰구간이 15배 좁게 나온다.
+part를 2~3개 받아 family 250개 수준을 확보하더라도 test family는 40개 안팎이다.
 이 규모에서 **AUROC 0.02 차이는 아무 의미가 없다.**
 → 모든 수치에 **bootstrap 95% CI(2000회 resampling)**를 붙이고,
 모델 A vs B는 **같은 테스트 영상에 대한 paired bootstrap**으로 비교한다.
@@ -780,7 +810,7 @@ findeepfake-48h/
 | 순위 | 항목 | 상태 | 비고 |
 |---|---|---|---|
 | **P0-A** | **사건 코딩 완료** (§1.1.1) | ✅ | 15건 코딩 완료. 48시간 일정표에 이 작업 슬롯은 **0분**이라 시계 시작 전에 끝내야 했다 |
-| **P0-B** | Kaggle 규약 동의 + DFDC 다운로드 착수 | ⬜ | **Day 1의 6개 슬롯 전부가 여기 매달림. 오너만 할 수 있다** |
+| **P0-B** | HF에서 `dfdc_train_part_00`(+01, 02) 다운로드 | ⬜ | **오너 액션 아님 — 스크립트로 즉시 착수 가능.** Kaggle 배제로 승인 대기가 사라졌다 (§5.1) |
 | **P0-C** | 학습환경 — `torch.cuda.is_available()` | ✅ | `torch 2.12.1+cu126` / GTX 1650 (compute 7.5, 4.29GB) / AMP fp16 동작 확인 |
 | P1 | `ffmpeg` 설치 | ✅ | 9.0 (winget `Gyan.FFmpeg`) |
 | P1 | `requirements.txt` 재작성 | ✅ | FinDeepfake 기준으로 전면 교체. **torch는 의도적으로 제외** — CPU 빌드가 깔리면 학습이 통째로 막힌다 |
@@ -883,7 +913,8 @@ HuggingFace Transformers · DeBERTa-v3-small · Whisper · scikit-learn · Strea
 ## References
 
 - Meta DFDC — https://ai.meta.com/datasets/dfdc/
-- Kaggle DFDC — https://www.kaggle.com/competitions/deepfake-detection-challenge/data
+- DFDC 미러(취득처) — https://huggingface.co/datasets/gonnerthetooner/DFDC-extracted-full
+- DFDC metadata — https://huggingface.co/datasets/scarlettss/dfdc_metadata
 - WIDER FACE — https://shuoyang1213.me/WIDERFACE/
 - YOLOv8-Face (pretrained) — https://github.com/lindevs/yolov8-face
 - Fin-Fact — https://github.com/IIT-DM/Fin-Fact · https://huggingface.co/datasets/amanrangapur/Fin-Fact
@@ -899,3 +930,12 @@ HuggingFace Transformers · DeBERTa-v3-small · Whisper · scikit-learn · Strea
 각 데이터셋과 pretrained 가중치는 원 저작자의 라이선스를 따른다.
 DFDC·FakeAVCeleb 등 실제 인물의 얼굴이 포함된 데이터는 제출·배포 전에 이용 조건을 다시 확인한다.
 데모용으로 제작한 합성 영상은 프로젝트 시연 목적으로만 사용하고 외부 배포하지 않는다.
+
+**HuggingFace 미러 사용에 관한 주의** (§5.1)
+
+- 미러는 **비공식 재배포**이며 라이선스 필드가 비어 있다. 원본 DFDC는 Meta의 DFDC EULA 하에 배포된다.
+  **연구·학습 목적으로 사용하는 것과 결과물을 배포하는 것은 다르다.** 출처는 항상 Meta DFDC로 표기한다.
+- **미러는 예고 없이 내려갈 수 있다.** Day 1 첫 시간에 받아두는 것이 유일한 방어다.
+- **얼굴이 식별 가능한 프레임·크롭을 리포지토리에 커밋하거나 공개 데모에 노출하지 않는다.**
+  DFDC는 동의한 유급 배우로 구성되지만, 그것이 재배포 권한을 의미하지는 않는다.
+  (`.gitignore`가 `data/model/` 전체를 제외하는 이유가 이것이다.)
