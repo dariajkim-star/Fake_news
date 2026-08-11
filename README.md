@@ -249,25 +249,32 @@ Q2. 영상 속 금융 주장은 제공된 근거에 의해 지지되는가? → 
               │                               │
       Frame Sampling (2 fps)          FFmpeg 16kHz mono
               │                               │
-      ┌───────▼────────┐                      │
-      │ Face Detection │  ← Object Detection  │
-      │  YOLOv8n-Face  │                      │
-      └───────┬────────┘                Whisper (STT)
-              │ bbox + margin                 │
-         Face Crop 224²                  Transcript
+      ┌───────▼────────┐                Whisper (STT)
+      │ Face Detection │                      │
+      │  YOLOv8n-Face  │  ← 직접 학습    Transcript
+      │ (OpenForensics │     (D2)             │
+      │   fine-tuned)  │              금융 문장 필터
+      └───────┬────────┘                      │
+              │ bbox                   Financial Claim
+         Face Crop 224²                       │
               │                               │
-      ┌───────▼────────┐              금융 문장 필터
+      ┌───────▼────────┐   Provided Evidence ─┤  ← 자동 생성 아님 (§2.1)
       │   Deepfake     │                      │
       │ EfficientNet-B0│              ┌───────▼────────┐
-      └───────┬────────┘              │ Claim Classifier│  ← NLP
-              │                       │ DeBERTa-v3-small│
-     frame prob → median              └───────┬────────┘
-              │                               │
-      Video-level P(fake)              Claim label + conf
+      │  ← 직접 학습    │              │ Claim Verifier │
+      └───────┬────────┘              │ DeBERTa-v3-small│ ← 직접 학습
+              │                       └───────┬────────┘
+     frame prob → median                      │
+              │                       SUPPORTED / REFUTED
+      Video-level P(fake)                     │
               └───────────────┬───────────────┘
                               │
                       RISK MATRIX (§8.3)
 ```
+
+**Evidence는 영상에서 자동으로 생기지 않는다.** Whisper가 만드는 것은 transcript → claim까지다.
+evidence는 **별도로 제공되어야 하며**(PoC에서는 Fin-Fact가 제공, 실서비스에서는 retrieval 단계가 필요),
+이 경계가 §2.1의 "Evidence Retrieval System이 아니다"의 도식적 표현이다.
 
 **딥러닝 사용 지점 4곳**: Object Detection(YOLO) · 이미지 분류(EfficientNet) · 음성인식(Whisper) · **NLP 텍스트 분류(DeBERTa)**.
 이 중 NLP는 선택이 아니라 필수 축이며, 실제로 fine-tuning하고 별도 ablation으로 평가한다.
@@ -597,19 +604,28 @@ Evidence는 옵션이 아니라 **H2의 핵심 변수**다 (§7.2).
 - 논문: *OpenForensics: Large-Scale Challenging Dataset for Multi-Face Forgery Detection and Segmentation* (ICCV 2021)
 - 전체 115,325 이미지 / 334,136 얼굴, face별 **bbox + real/forged 라벨 + segmentation polygon** (표준 COCO JSON)
 
-**Val split만 받는다** (실측 근거):
+**역할 분담 — Train으로 학습하고 Val로 평가한다** (공식 split 프로토콜 준수):
 
-| 항목 | 값 |
+| split | 용도 | 취득 |
+|---|---|---|
+| **Train** (44,122장, 19.9GB, zip 5개 전부 필요) | **D2 fine-tuning** — 단, 전량이 아니라 **부분표본 ~10k장**(seed 42 고정 추출)으로 학습 | D-1 밤 백그라운드 (약 4시간, 시계 밖) |
+| **Val** (7,308장 / 15,345 얼굴, Real 4,782:Fake 10,563) | **D1·D2 공통 평가셋** — 학습에 쓰지 않는다 | 3.24GB ≈ 40분 ✅ |
+
+**Val을 학습에 쓰지 않는 이유**: D1(zero-shot)과 D2(fine-tuned)를 **같은 Val에서** 재야 ΔmAP가
+공정한 비교가 된다. Val을 쪼개 학습에 쓰면 저자 공식 경계를 깨고 평가셋도 줄어든다.
+
+**Train을 전량 쓰지 않는 이유** (실측): Zenodo가 0.79MB/s라 19.9GB ≈ 4시간 — 다운로드는 D-1 밤
+시계 밖으로 밀면 흡수되지만, **44,122장 학습은 47분/epoch × 15 = 12시간이라 시계 안에서 기각**이다.
+~10k장 부분표본이면 11분/epoch × 15 ≈ 3시간으로 성립한다. 표본 추출 seed와 목록을 `results/`에 기록한다.
+
+> **Fallback**: D-1 밤 Train 다운로드가 실패하면(미러 소멸·회선 문제) Val 7,308장을 내부 분할해
+> 학습하되, **저자 공식 split 경계를 깼음을 한계로 명시**한다. 이건 차선이지 정본이 아니다.
+
+| 기타 실측 | 값 |
 |---|---|
-| 취득 파일 | `Val.zip`(3.12GB) + `Val_poly.json`(0.12GB) — **Val은 단일 zip으로 자기완결** |
-| 규모 | 7,308 이미지 / 15,345 얼굴 (Real 4,782 / Fake 10,563 = 1:2.21) |
 | 해상도 | 최대 1024×1024, bbox 중앙값 한 변 ≈191px — YOLO 640 입력에 적정 |
-| 다운로드 | **Zenodo 서버가 0.79MB/s로 느리다** (병렬화해도 1.38MB/s). Val 3.24GB ≈ 40분 |
-| Train split | 19.9GB ≈ 4시간 다운로드 + 47분/epoch — **48시간 예산에서 기각** |
-| 어노테이션 | `category_id` 0=Real 1=Fake가 그대로 YOLO class id. 변환 15줄/0.07초, 좌표 이상치 0건 |
-
-**YOLOv8n fine-tuning 실측** (GTX 1650, 640², AMP): batch 16에서 peak **2.15GB** / Val 1 epoch **약 8분**
-→ 15 epoch ≈ 2.5~3시간. 4GB 카드에서 성립한다.
+| 어노테이션 | `category_id` 0=Real 1=Fake. COCO 표준, 변환 15줄/0.07초, 좌표 이상치 0건 |
+| YOLOv8n FT | GTX 1650, 640², AMP, batch 16: peak **2.15GB** / 7.3k장 1 epoch ≈ 8분 |
 
 > ⚠️ **identity 누수는 검증 불가다 — 검증했더니 없더라가 아니다.** 어노테이션에 source identity
 > 필드가 없어, 같은 인물·같은 촬영 세트가 분할을 가로지르는지 **확인할 방법 자체가 없다.**
@@ -737,8 +753,8 @@ fine-tuning이 검출을 개선하는가), `N1 vs N2`(evidence가 검증에 도�
 | V0 | Vision(분류) | Full frame → EfficientNet-B0 | AUROC | – | – | **필수** |
 | V1 | Vision(분류) | YOLO ROI (tight) → EfficientNet-B0 | AUROC | – | – | **필수** |
 | — | Vision(분류) | **V1 − V0 (paired)** ← H1 | ΔAUROC | – | – | **필수** |
-| D1 | Detection | YOLOv8n-Face pretrained, zero-shot (OpenForensics Val test부) | mAP@50 | – | – | **필수** |
-| D2 | Detection | YOLOv8n-Face **fine-tuned** (OpenForensics Val train부) | mAP@50 | – | – | **필수** |
+| D1 | Detection | YOLOv8n-Face pretrained, zero-shot — **OpenForensics Val 평가** | mAP@50 | – | – | **필수** |
+| D2 | Detection | YOLOv8n-Face **Train(~10k) fine-tuned** — 동일 Val 평가 | mAP@50 | – | – | **필수** |
 | — | Detection | **D2 − D1** ← H3 | ΔmAP@50 | – | – | **필수** |
 | N1 | NLP | DeBERTa-v3-small, claim only | Macro-F1 | – | bootstrap | **필수** |
 | N2 | NLP | DeBERTa-v3-small, claim + evidence | Macro-F1 | – | bootstrap | **필수** |
@@ -772,9 +788,14 @@ H3가 검증하는 것: **deepfake 도메인 데이터로 face detector를 fine-
 일반 얼굴 데이터(WIDER FACE)로 학습된 pretrained detector 대비 검출 성능이 개선되는가 (D2 − D1).**
 
 ```
-D1  YOLOv8n-Face (WIDER FACE pretrained)  ── zero-shot ──►  OpenForensics Val test부  →  mAP@50
-D2  YOLOv8n-Face + OpenForensics fine-tune ─────────────►  동일 test부              →  mAP@50
+                     OpenForensics Train (부분표본 ~10k, seed 42)
+                                   ↓
+D1  YOLOv8n-Face (WIDER FACE pretrained) ── zero-shot ──►  OpenForensics Val  →  mAP@50
+D2  YOLOv8n-Face + Train fine-tune ─────────────────────►  동일 Val           →  mAP@50
+                                                                              →  ΔmAP = H3
 ```
+
+**Train으로 학습하고 Val로 평가한다 — Val은 두 모델의 공통 평가셋이며 학습에 쓰지 않는다** (§5.6).
 
 **클래스는 FACE 하나로 통일한다** (Real/Fake bbox를 모두 class 0으로 변환). 이유:
 
@@ -786,8 +807,8 @@ D2  YOLOv8n-Face + OpenForensics fine-tune ────────────�
 - 단, GT의 real/forged 라벨은 버리지 않는다 — **forged face에 대한 recall을 따로 보고**해
   "fine-tuning이 특히 합성 얼굴 검출을 개선하는가"를 본다. 이건 2-class 학습 없이도 계산된다.
 
-fine-tuning은 Val 7,308장을 저자 공식 경계 안에서 train/test부로 다시 나눠 쓴다
-(Train split 19.9GB는 다운로드 4시간이라 기각 — §5.6).
+fine-tuning은 **Train split 부분표본(~10k, seed 42)**으로, 평가는 **Val 전체**로 한다 (§5.6).
+Val을 쪼개 학습에 쓰지 않는다 — 저자 공식 split 경계를 존중하고 D1/D2의 평가셋을 동일하게 유지하기 위해서다.
 
 ### 7.2 NLP: H2 — 이 프로젝트에서 가장 중요한 ablation
 
@@ -961,9 +982,11 @@ model(batch: dict) -> logits  # [B, num_classes]
   **"OpenForensics의 GT bounding-box annotation으로 YOLOv8n-Face를 fine-tuning하고
   mAP@50으로 정식 평가했으며(D1 vs D2), 검출된 얼굴 ROI가 downstream deepfake 분류에 미치는
   효과를 별도로 검증했다(V0 vs V1)."** — bbox를 직접 그렸다고는 말하지 않는다. GT는 데이터셋이 제공한다.
-- **detector의 도메인 이전도 주장하지 않는다.** OpenForensics는 이미지 기반 GAN face-swap이고
-  DFDC는 영상이다. OpenForensics에서 학습한 detector를 DFDC crop 생성에 쓰되,
-  두 도메인 간 이전 성능은 검증하지 않았음을 명시한다.
+- **cross-dataset transfer 성능을 주장하지 않는다.** OpenForensics에서 fine-tuning한 detector를
+  DFDC 프레임의 **ROI extractor로 transfer**하지만, DFDC 프레임에는 bbox GT가 없어
+  **OpenForensics → DFDC cross-dataset detection 성능은 직접 검증하지 못한다.**
+  (YOLO의 입력은 영상 자체가 아니라 추출된 frame image다 — "이미지→영상 이전"이 아니라
+  데이터셋 간 이전이며, 그 정확한 한계가 이것이다.)
 - **N1(claim-only) 점수가 높다고 사실 검증 능력의 증거로 해석하지 않는다** (§7.2).
 - **사례에서 나온 문제를 전부 푼다고 주장하지 않는다.** 코딩한 15건에서 검증 실패는 4개 유형으로
   나왔고 우리가 답하는 것은 A(발언 영상 진위)와 C(주장 근거 일치 여부)뿐이다. **B(채널 정통성) 6/15는 범위 밖**이다 —
@@ -1036,7 +1059,8 @@ findeepfake-48h/
 |---|---|---|---|
 | **P0-A** | **사건 코딩 완료** (§1.1.1) | ✅ | 15건 코딩 완료. 48시간 일정표에 이 작업 슬롯은 **0분**이라 시계 시작 전에 끝내야 했다 |
 | **P0-B** | HF에서 `dfdc_train_part_02` 다운로드 | ✅ | 1,748개 / 9.5GB 확보, 라벨 육안 확인·family split 완료 (§5.1) |
-| **P0-D** | **OpenForensics `Val.zip`+`Val_poly.json` 다운로드** (3.24GB) | ⬜ | **Zenodo가 0.79MB/s로 느리다 — 약 40분.** 승인 불필요. 48시간 시계 시작 전에 받아둔다 (§5.6) |
+| **P0-D** | **OpenForensics `Val.zip`+`Val_poly.json` 다운로드** (3.24GB, 평가셋) | 🔄 | **Zenodo가 0.79MB/s로 느리다 — 약 40분.** 승인 불필요 (§5.6) |
+| **P0-E** | **OpenForensics `Train_part_1~5`+`Train_poly.json` 다운로드** (20.4GB, D2 학습용) | ⬜ | **약 4시간 — D-1 밤 백그라운드로.** zip 5개 전부 있어야 압축해제된다. 실패 시 Val 내부분할 fallback (§5.6) |
 | **P0-C** | 학습환경 — `torch.cuda.is_available()` | ✅ | `torch 2.12.1+cu126` / GTX 1650 (compute 7.5, 4.29GB) / AMP fp16 동작 확인 |
 | P1 | `ffmpeg` 설치 | ✅ | 9.0 (winget `Gyan.FFmpeg`) |
 | P1 | `requirements.txt` 재작성 | ✅ | FinDeepfake 기준으로 전면 교체. **torch는 의도적으로 제외** — CPU 빌드가 깔리면 학습이 통째로 막힌다 |
