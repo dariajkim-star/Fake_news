@@ -1,0 +1,33 @@
+{
+  "seed": 42,
+  "fake_cap_train": 5,
+  "source_parts": [
+    "dfdc_train_part_02"
+  ],
+  "totals": {
+    "families": 230,
+    "videos_before_cap": 1748,
+    "videos_after_cap": 1116
+  },
+  "splits": {
+    "train": {
+      "families": 164,
+      "videos": 610,
+      "real": 164,
+      "fake": 446
+    },
+    "val": {
+      "families": 33,
+      "videos": 248,
+      "real": 33,
+      "fake": 215
+    },
+    "test": {
+      "families": 33,
+      "videos": 258,
+      "real": 33,
+      "fake": 225
+    }
+  },
+  "split_sha256": "3299ddc87393235cb6be4ad80f68cfcba8dc41c8359c34bd00beee43ac2b5fb0"
+}

@@ -32,6 +32,11 @@ venv/
 /data/model/**
 !/data/model/**/
 !/data/model/**/.gitkeep
+#     예외 — split 정의는 미디어가 아니라 재현성 산출물이다(합계 ~72KB).
+#     영상 파일명·라벨·family만 들어 있어 원본 미디어를 재배포하지 않는다.
+#     이게 없으면 "같은 분할로 재현했다"를 증명할 방법이 없다.
+!/data/model/splits/*.csv
+!/data/model/splits/split_report.json
 # raw 기사 원문은 용량·저작권 문제로 커밋하지 않는다 (재현은 크롤러 재실행으로).
 fake_news_painpoint_crawlers/output/
 checkpoints/
