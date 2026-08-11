@@ -36,7 +36,7 @@ Pain Point ①  누가 실제로 말했는지 검증하기 어렵다   → Media
 Pain Point ②  발언 내용이 사실인지 판단하기 어렵다   → Financial Claim Verification 문제
 ```
 
-### 1.1.2 코딩 결과 — 투자자는 무엇을 확인하지 못했는가
+### 1.1.1 코딩 결과 — 투자자는 무엇을 확인하지 못했는가
 
 15건의 `verification_failure` 필드를 귀납하면 **4개 유형**으로 수렴한다. 이것이 pain point ①②의 실증 근거다.
 
@@ -95,7 +95,7 @@ Pain Point ②  발언 내용이 사실인지 판단하기 어렵다   → Finan
 즉 문제는 "deepfake 영상을 탐지한다"가 아니라
 **"투자자의 판단 이전에 영상의 진위와 금융 주장 신뢰도를 동시에 확인할 수단이 부족하다"**이다.
 
-### 1.1.1 기사에서 사건으로 — 무엇을 세었는가
+### 1.1.2 기사에서 사건으로 — 무엇을 세었는가
 
 **가장 중요한 구분: 수집한 2,995건은 2,995개의 독립 사건이 아니다.** 동일 사건을 여러 매체가 중복 보도한다.
 실제로 "캄보디아 투자사기 부부" 한 사건이 제목만 달리한 채 20건 이상으로 흩어져 있었다.
@@ -385,8 +385,23 @@ results/
 - 실제 취득처: HuggingFace 미러 https://huggingface.co/datasets/gonnerthetooner/DFDC-extracted-full
 - metadata만 별도: https://huggingface.co/datasets/scarlettss/dfdc_metadata
 
-**Kaggle을 쓰지 않는다.** 계정·대회 규약 동의·승인 대기가 전부 사라지고, 받는 데이터는 동일한 mp4와
-동일한 metadata 스키마다. 전체 DFDC는 10만 개 이상이라 손댈 수 없으므로 **`dfdc_train_part_XX` 단위로 받는다.**
+> **Decision — DFDC Acquisition (확정, 재논의 금지)**
+>
+> 본 프로젝트는 **Meta DFDC**를 Vision 학습 데이터로 사용한다. 48시간 프로젝트의 접근성과 재현 가능한
+> 부분 다운로드를 위해 검증된 **HuggingFace mirror를 primary acquisition path**로 사용한다.
+> **Kaggle은 공식 provenance 및 fallback 경로로 유지하되, 프로젝트 실행의 blocking dependency로 두지 않는다.**
+> Raw DFDC media는 원 데이터 이용조건에 따라 저장소에 배포하지 않는다.
+
+즉 **HF는 취득 경로이고, 데이터의 정체성은 DFDC다.** 보고서·발표에는 이렇게 표기한다.
+
+```
+Dataset            : Meta Deepfake Detection Challenge (DFDC)
+Acquisition        : HuggingFace mirror (project-time accessibility)
+Original data terms: Meta DFDC terms apply
+```
+
+"HF 미러를 썼으니 자유롭게 재배포 가능"은 **성립하지 않는다.** 전체 DFDC는 10만 개 이상이라 손댈 수 없으므로
+**`dfdc_train_part_XX` 단위로 받는다.**
 
 ```bash
 python -c "from huggingface_hub import snapshot_download; snapshot_download('gonnerthetooner/DFDC-extracted-full', repo_type='dataset', allow_patterns='dfdc_train_part_00/**', local_dir='data/model/raw/dfdc')"
@@ -404,7 +419,39 @@ python -c "from huggingface_hub import snapshot_download; snapshot_download('gon
 
 > 🚨 **이 표에서 가장 중요한 숫자는 1,334가 아니라 86이다.** family 단위로 자르면 **독립 표본은 86개**다.
 > 70/15/15로 나누면 test family는 **13개**뿐이다. 영상 수를 표본 수로 착각하면 신뢰구간을 15배 좁게
-> 보고하게 된다. → **part를 2~3개 받아 family 250개 수준을 확보할 것을 권한다** (§6.1 함정 3).
+> 보고하게 된다.
+
+**어느 part를 받을 것인가 — part는 균질하지 않다.**
+
+영상을 받기 전에 metadata만으로(수 MB) 50개 part의 family 규모를 먼저 계산했다. 결과는 **part_00이 최악**이다.
+
+| part | 영상 | family | FAKE:REAL | **영상/family** | test family(15%) |
+|---:|---:|---:|---:|---:|---:|
+| 00 | 1,334 | 86 | 14.5:1 | **15.5** ← 최악 | 12 |
+| 01 | 1,699 | 108 | 14.7:1 | 15.7 | 16 |
+| **02** | **1,748** | **230** | **6.6:1** | **7.6** | **34** |
+| 03 | 1,455 | 219 | 5.6:1 | 6.6 | 32 |
+| 06 | 3,464 | 423 | 7.2:1 | 8.2 | 63 |
+| 09 | 1,736 | 288 | 5.0:1 | **6.0** ← 최선 | 43 |
+
+**같은 10GB를 받아도 part_00은 family 86개, part_09는 288개를 준다 — 3.3배 차이다.**
+part_00·01은 한 원본에서 15개씩 파생시킨 반면 뒤쪽 part는 6개 수준이라, 앞쪽 part는
+**같은 얼굴을 반복해서 받는 셈**이다.
+
+> ✅ **결정: `part_02` 단독 취득.** family 230개 → test family 34개로 목표(30~40)를 한 번에 충족하고,
+> 불균형도 6.6:1로 완화된다. part_00+01(24GB, family 194, test 29)보다 **적게 받고 더 얻는다.**
+> 부족하면 `part_03`(+219 family)을 추가한다.
+
+**family당 FAKE 상한(K)** — 학습 시 family당 FAKE를 최대 K개로 제한한다.
+
+```
+part_00 기준  family당 FAKE 수: 최소 1 / 중앙 11 / 최대 36
+K=5 적용 시   FAKE 1,248 → 393   (불균형 14.5:1 → 4.6:1)
+```
+
+한 원본에서 파생된 36개 fake는 독립 관측 36건이 아니다. K 상한은 **학습시간 감소·family 편중 완화·
+FAKE 클래스 지배 완화**를 동시에 해결한다. **단, 이 상한은 train split에만 적용하고 test split은
+원본 분포를 유지한다** — 평가 대상 분포를 인위적으로 바꾸면 지표의 의미가 사라진다.
 
 > ⚠️ **클래스 불균형이 예상보다 훨씬 심하다.** 당초 "FAKE가 많다" 정도로 적었으나 실측은 **14.5:1**이다.
 > 전부 FAKE로 찍으면 Accuracy 93.6%가 나온다. §6.2에서 Accuracy를 주 지표로 쓰지 않기로 한 결정이
@@ -525,13 +572,23 @@ https://github.com/DASH-Lab/FakeAVCeleb — 영상+합성 음성을 함께 제�
 프레임 확률은 median으로 집계한다 (평균보다 검출 실패 프레임에 강건).
 
 **함정 2 — 클래스 불균형에서 Accuracy는 무의미하다.**
-DFDC sample은 FAKE 비율이 높다. 전부 FAKE로 찍어도 Accuracy가 높게 나온다.
-→ **주 지표는 AUROC와 Average Precision(PR-AUC)**, Accuracy는 참고용으로만 병기한다.
+실측: DFDC part_00~09의 FAKE:REAL은 **6.9 : 1**이고, part_00만 보면 **14.5 : 1**이다.
+전부 FAKE로 찍기만 해도 Accuracy **87.4%**(part_00 단독이면 93.6%)가 나온다.
+
+```
+Primary   : AUROC · AUPRC
+Secondary : Macro-F1 · FAKE Recall · Balanced Accuracy
+참고용    : Accuracy
+```
+
+**AUPRC를 주 지표에 넣는 이유**는 불균형 데이터에서 AUROC가 낙관적으로 나오기 때문이다.
+음성(REAL)이 희소하면 위양성 몇 건이 FPR을 거의 움직이지 못해 ROC 곡선이 좋아 보이는데,
+PR 곡선은 그걸 그대로 드러낸다.
 
 **함정 3 — 표본이 작아서 작은 차이는 노이즈다.**
-**독립 표본은 영상이 아니라 family다.** part_00 실측으로 family는 86개뿐이고, 70/15/15 분할 시
-**test family는 13개**다. 영상 수(1,334)를 표본 수로 쓰면 신뢰구간이 15배 좁게 나온다.
-part를 2~3개 받아 family 250개 수준을 확보하더라도 test family는 40개 안팎이다.
+**독립 표본은 영상이 아니라 family다.** `part_02` 기준 family 230개, 70/15/15 분할 시
+**test family는 34개**다. 영상 수(1,748)를 표본 수로 쓰면 신뢰구간이 7배 좁게 나온다.
+bootstrap도 **family 단위로 resampling**해야 하며, 영상 단위로 하면 같은 오류를 반복한다.
 이 규모에서 **AUROC 0.02 차이는 아무 의미가 없다.**
 → 모든 수치에 **bootstrap 95% CI(2000회 resampling)**를 붙이고,
 모델 A vs B는 **같은 테스트 영상에 대한 paired bootstrap**으로 비교한다.
@@ -541,7 +598,7 @@ CI가 0을 포함하면 "개선 없음"이라고 쓴다. 이건 사후에 정하
 
 | 모듈 | 주 지표 | 보조 | 단위 | 불확실성 |
 |---|---|---|---|---|
-| Deepfake | **AUROC** | AP, F1, FAKE Recall, Accuracy | **video** | bootstrap 95% CI |
+| Deepfake | **AUROC + AUPRC** | Macro-F1, FAKE Recall, Balanced Accuracy, Accuracy(참고) | **video** | bootstrap 95% CI |
 | Deepfake A vs B | **ΔAUROC** | — | video (paired) | paired bootstrap CI |
 | NLP | **Macro-F1** | per-class P/R/F1, Accuracy | claim | **test set bootstrap CI** (seed 42 고정) |
 | Face Detection | **Detection Success Rate** | 수동 스팟체크 정확도 | frame | — |
