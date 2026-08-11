@@ -1,0 +1,10 @@
+{
+  "detector": "yolov8n-face-lindevs.pt",
+  "margin": 1.0,
+  "videos": 1116,
+  "detection_failed": [],
+  "detection_success_rate": 1.0,
+  "frames_total": 22320,
+  "crops_total": 22318,
+  "elapsed_sec": 1442
+}
